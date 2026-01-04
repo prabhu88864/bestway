@@ -1,0 +1,213 @@
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import axiosInstance from "../utils/axiosInstance";
+
+export default function AdminDashboard() {
+  const navigate = useNavigate();
+
+  const [counts, setCounts] = useState({
+    users: 0,
+    orders: 0,
+    products: 0,
+    banners: 0,
+    revenue: "₹—",
+  });
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    const role = (user?.role || "").toUpperCase();
+
+    if (!token || !role.includes("ADMIN")) {
+      navigate("/admin", { replace: true });
+      return;
+    }
+
+    fetchCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate]);
+
+  const logout = () => {
+    localStorage.clear();
+    navigate("/admin", { replace: true });
+  };
+
+  // ✅ Fetch counts (safe fallback if any API missing)
+  const fetchCounts = async () => {
+    try {
+      // Users count (your users api returns { total, users })
+      const usersReq = axiosInstance
+        .get("/api/users", { params: { role: "USER" } })
+        .then((r) => r.data?.total ?? (r.data?.users?.length || 0))
+        .catch(() => 0);
+
+      // Products count (if your products api returns array)
+      const productsReq = axiosInstance
+        .get("/api/products")
+        .then((r) => (Array.isArray(r.data) ? r.data.length : r.data?.total || 0))
+        .catch(() => 0);
+
+      // Orders count (Admin orders API should exist - if not, 0)
+      // (If your API returns array -> length)
+      const ordersReq = axiosInstance
+        .get("/api/orders/admin") // ✅ if you have admin orders route
+        .then((r) => (Array.isArray(r.data) ? r.data.length : r.data?.total || 0))
+        .catch(() => 0);
+
+      // ✅ Banners count (our banners admin api returns { total, banners })
+      const bannersReq = axiosInstance
+        .get("/api/banners")
+        .then((r) => r.data?.total ?? (r.data?.banners?.length || 0))
+        .catch(() => 0);
+
+      const [users, products, orders, banners] = await Promise.all([
+        usersReq,
+        productsReq,
+        ordersReq,
+        bannersReq,
+      ]);
+
+      setCounts((prev) => ({
+        ...prev,
+        users,
+        products,
+        orders,
+        banners,
+      }));
+    } catch (e) {
+      console.log("fetchCounts error", e);
+    }
+  };
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.header}>
+        <div>
+          <h2 style={{ margin: 0 }}>Admin Dashboard</h2>
+          <div style={styles.sub}>Manage users, orders, products & ads</div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={() => navigate("/")} style={styles.btn}>
+            Home
+          </button>
+          <button onClick={logout} style={styles.logout}>
+            Logout
+          </button>
+        </div>
+      </div>
+
+      <div style={styles.stats}>
+        <StatCard title="Users" value={counts.users} onClick={() => navigate("/admin/users")} />
+        <StatCard title="Orders" value={counts.orders} onClick={() => navigate("/admin/orders")} />
+        <StatCard
+          title="Products"
+          value={counts.products}
+          onClick={() => navigate("/admin/products")}
+        />
+        <StatCard title="Revenue" value={counts.revenue} onClick={() => navigate("/admin/orders")} />
+
+        {/* ✅ NEW: Ads/Banners */}
+        <StatCard
+          title="Ads / Banners"
+          value={counts.banners}
+          onClick={() => navigate("/admin/banners")}
+          badge="NEW"
+        />
+      </div>
+
+      <div style={styles.hintBox}>
+        <b>Tip:</b> Card meeda click cheste respective page open avutundi.
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ title, value, onClick, badge }) {
+  return (
+    <div
+      onClick={onClick}
+      style={styles.statCard}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onClick()}
+    >
+      <div style={styles.cardTop}>
+        <div style={styles.cardTitle}>{title}</div>
+        {badge ? <span style={styles.badge}>{badge}</span> : null}
+      </div>
+
+      <div style={styles.cardValue}>{value}</div>
+      <div style={styles.cardHint}>Click to open →</div>
+    </div>
+  );
+}
+
+const styles = {
+  page: { padding: 20, background: "#f4f6f8", minHeight: "100vh" },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  sub: { marginTop: 4, color: "#666", fontSize: 13 },
+
+  btn: {
+    padding: "10px 14px",
+    cursor: "pointer",
+    borderRadius: 10,
+    border: "1px solid #ddd",
+    background: "#fff",
+  },
+  logout: {
+    padding: "10px 14px",
+    cursor: "pointer",
+    borderRadius: 10,
+    border: "1px solid #111",
+    background: "#111",
+    color: "#fff",
+    fontWeight: 800,
+  },
+
+  stats: {
+    display: "grid",
+    gridTemplateColumns: "repeat(5, 1fr)",
+    gap: 12,
+    marginTop: 18,
+  },
+
+  statCard: {
+    background: "#fff",
+    padding: 16,
+    borderRadius: 12,
+    boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+    cursor: "pointer",
+    userSelect: "none",
+    transition: "transform .08s ease",
+    border: "1px solid rgba(0,0,0,0.06)",
+  },
+
+  cardTop: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 },
+  cardTitle: { fontSize: 13, color: "#666", fontWeight: 700 },
+  badge: {
+    fontSize: 11,
+    padding: "3px 8px",
+    borderRadius: 999,
+    background: "#111",
+    color: "#fff",
+    fontWeight: 900,
+  },
+
+  cardValue: { fontSize: 28, fontWeight: 900, marginTop: 8, color: "#111" },
+  cardHint: { marginTop: 6, fontSize: 12, color: "#888" },
+
+  hintBox: {
+    marginTop: 16,
+    background: "#fff",
+    padding: 14,
+    borderRadius: 12,
+    boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+  },
+};

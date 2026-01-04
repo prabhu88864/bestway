@@ -1,5 +1,5 @@
-import * as types from "./actionTypes"
-import { loginApi } from "../../redux/apis/loginApi"; // we'll define this API next
+import * as types from "./actionTypes";
+import { loginApi } from "../../redux/apis/loginApi";
 
 // Start Action
 export const loginStart = () => ({
@@ -23,27 +23,34 @@ export const logoutUser = () => ({
   type: types.LOGOUT_USER,
 });
 
-// Main Initiator (Thunk)
-export const loginInitiate = (credentials,  navigate) => {
+// 🔥 MAIN LOGIN (ROLE BASED)
+export const loginInitiate = (credentials, navigate) => {
   return function (dispatch) {
     dispatch(loginStart());
-    console.log("loginInitiate called with:", credentials);
 
     loginApi(credentials)
       .then((res) => {
-        console.log("login response", res);
-
         const userData = res?.data;
         const token = userData?.token;
-
-        // Store token in localStorage
+         const user = userData?.user;  
+        const role = userData?.user?.role; // ✅ ROLE HERE
+          console.log("role",role)
+        // store token
         if (token) localStorage.setItem("token", token);
+        if (user) localStorage.setItem("user", JSON.stringify(user));
 
         dispatch(loginSuccess(userData));
-        navigate("/dashboard");
+
+        // ✅ ROLE BASED NAVIGATION
+        if (role === "ADMIN") {
+          console.log("navigate type:", typeof navigate);
+
+          navigate("/admin/dashboard", { replace: true });
+        } else {
+          navigate("/dashboard");
+        }
       })
       .catch((error) => {
-        console.error("login error", error);
         dispatch(loginError(error.message || "Login failed"));
       });
   };

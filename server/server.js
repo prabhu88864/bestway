@@ -16,6 +16,8 @@ import Wallet from "./models/Wallet.js";
 import WalletTransaction from "./models/WalletTransaction.js";
 import walletRoutes from "./routes/wallet.js";
 import deliveryCharge from "./routes/deliveryCharge.js";
+import user from "./routes/user.js";
+import bannerRoutes from "./routes/banners.js";
 
 dotenv.config()
 const app = express()
@@ -33,6 +35,9 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/deliverycharges", deliveryCharge);
+app.use("/api/users", user);
+
+app.use("/api/banners", bannerRoutes);
 
 
 /* relations */

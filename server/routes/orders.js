@@ -151,15 +151,45 @@ GET /api/orders
 */
 router.get("/", auth, async (req, res) => {
   try {
+    const search = (req.query.search || "").trim();
+
+    // ✅ base condition: only logged-in user's orders
+    const where = { userId: req.user.id };
+
+    // ✅ allow searching by orderId or status
+    if (search) {
+      // if numeric -> order id search
+      if (/^\d+$/.test(search)) {
+        where.id = Number(search);
+      } else {
+        // status search (PAID / PENDING etc)
+        where.status = { [Op.like]: `%${search}%` };
+      }
+    }
+
     const orders = await Order.findAll({
-      where: { userId: req.user.id },
-      include: [{ model: OrderItem, include: [Product] }],
+      where,
+      include: [
+        {
+          model: OrderItem,
+          include: [
+            {
+              model: Product,
+              // ✅ product name search (optional)
+              ...(search && !/^\d+$/.test(search)
+                ? { where: { name: { [Op.like]: `%${search}%` } }, required: false }
+                : {}),
+            },
+          ],
+        },
+      ],
       order: [["createdAt", "DESC"]],
+      distinct: true,
     });
 
-    res.json(orders);
+    res.json({ total: orders.length, orders });
   } catch (e) {
-    console.error(e);
+    console.error("GET /api/orders error:", e);
     res.status(500).json({ msg: "Failed to get orders" });
   }
 });

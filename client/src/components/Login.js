@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { loginInitiate } from "../redux/actions/loginAction";
-import { STATUS_CODE, BASE_URL } from "../API/Constants";
+
 export default function Login() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -22,195 +22,135 @@ export default function Login() {
 
   return (
     <>
-      <style jsx>{`
-        * {
-          box-sizing: border-box;
-          margin: 0;
-          padding: 0;
+      <style>{`
+        *{ box-sizing:border-box; margin:0; padding:0; }
+        html, body, #root{
+          height:100%;
+          width:100%;
+          font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+          background:#0b1020;
         }
 
-        html,
-        body,
-        #root {
-          height: 100%;
-          width: 100%;
-          background: #000000 !important; /* Pure Black */
-          font-family: "Segoe UI", Arial, sans-serif;
+        :root{
+          --bg:#0b1020;
+          --border: rgba(255,255,255,.12);
+          --text: rgba(255,255,255,.92);
+          --muted: rgba(255,255,255,.68);
+          --brand1:#6D5BFF;
+          --brand2:#22D3EE;
+          --danger:#ff6b6b;
         }
 
-        .login-container {
+        body{
+          background:
+            radial-gradient(900px 600px at 10% 10%, rgba(109,91,255,.16), transparent 55%),
+            radial-gradient(900px 600px at 90% 25%, rgba(34,211,238,.14), transparent 55%),
+            linear-gradient(180deg, #070a16, var(--bg));
+          color: var(--text);
+        }
+
+        /* ===== Page ===== */
+        .page{
           min-height: 100vh;
-          background: #000000; /* Pure Black Only */
-          color: #e5e7eb;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 20px;
+          display:grid;
+          place-items:center;
+          padding: 22px 14px;
         }
 
-        /* Hotel Header */
-        .header {
-          text-align: center;
-          margin-bottom: 50px;
-        }
-
-        .logo-img {
-          width: 80px;
-          height: auto;
-          margin-bottom: 12px;
-          filter: brightness(1.4);
-        }
-
-        .hotel-small {
-          font-size: 13px;
-          letter-spacing: 0.35em;
-          color: #b0b0b0;
-          margin: 0 0 6px 0;
-          text-transform: uppercase;
-          font-weight: 500;
-        }
-
-        .hotel-main {
-          font-size: 28px;
-          letter-spacing: 0.38em;
-          color: #ffffff;
-          margin: 0;
-          font-weight: 800;
-          text-transform: uppercase;
-        }
-
-        /* Login Card */
-        .login-card {
+        .card{
           width: 100%;
           max-width: 420px;
-          background: #0a0a0a;
+          background: rgba(255,255,255,.06);
+          border: 1px solid rgba(255,255,255,.12);
           border-radius: 18px;
-          padding: 44px 36px;
-          text-align: center;
-          box-shadow: 
-            0 30px 70px rgba(0, 0, 0, 0.9),
-            0 0 0 1px rgba(80, 80, 120, 0.2);
-          border: 1px solid rgba(100, 100, 150, 0.15);
+          padding: 22px;
+          box-shadow: 0 24px 60px rgba(0,0,0,.45);
         }
 
-        .login-card h2 {
-          color: #fff;
-          font-size: 22px;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-          margin-bottom: 36px;
-          font-weight: 700;
+        .title{
+          font-size: 18px;
+          font-weight: 900;
+          margin-bottom: 6px;
+        }
+        .subtitle{
+          color: var(--muted);
+          font-size: 13px;
+          margin-bottom: 14px;
         }
 
-        .input-group {
-          margin-bottom: 22px;
-          text-align: left;
-        }
-
-        .input-group label {
-          display: block;
+        .field{ margin-top: 12px; }
+        .label{
+          font-size: 13px;
+          font-weight: 800;
           margin-bottom: 8px;
-          color: #e0ff;
-          font-size: 14px;
-          font-weight: 600;
-          letter-spacing: 0.8px;
+          color: rgba(255,255,255,.84);
         }
-
-        .input-group input {
-          width: 100%;
-          padding: 16px 18px;
+        .input{
+          width:100%;
+          padding: 12px 12px;
           border-radius: 12px;
-          border: 1px solid rgba(100, 150, 255, 0.3);
-          background: rgba(20, 20, 40, 0.6);
-          color: #fff;
-          font-size: 15px;
-          transition: all 0.3s ease;
+          border: 1px solid rgba(255,255,255,.14);
+          background: rgba(10, 14, 28, .50);
+          color: var(--text);
+          outline:none;
+        }
+        .input:focus{
+          border-color: rgba(34,211,238,.60);
+          box-shadow: 0 0 0 4px rgba(34,211,238,.14);
         }
 
-        .input-group input::placeholder {
-          color: #8888aa;
-        }
-
-        .input-group input:focus {
-          outline: none;
-          border-color: #60a5fa;
-          background: rgba(30, 40, 70, 0.8);
-          box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.2);
-        }
-
-        /* Silver Metallic Button */
-        .login-btn {
+        .btn{
           width: 100%;
-          padding: 18px;
           margin-top: 16px;
-          border-radius: 14px;
+          padding: 12px 12px;
+          border-radius: 12px;
           border: none;
-          font-size: 17px;
+          cursor:pointer;
+          font-weight: 900;
+          letter-spacing:.5px;
+          background: linear-gradient(135deg, rgba(109,91,255,.96), rgba(34,211,238,.88));
+          color: #08101f;
+        }
+        .btn:disabled{ opacity:.65; cursor:not-allowed; }
+
+        .error{
+          margin-top: 12px;
+          padding: 10px 12px;
+          border-radius: 12px;
+          border: 1px solid rgba(255,107,107,.35);
+          background: rgba(255,107,107,.10);
+          color: #ffd2d2;
           font-weight: 700;
-          letter-spacing: 0.16em;
-          text-transform: uppercase;
-          color: #0f172a;
-          background: linear-gradient(180deg, #fcfcfc 45%, #e0e0e0 52%, #b7b7b7 100%);
-          box-shadow: 
-            -8px 8px 24px rgba(10, 50, 60, 0.7),
-             8px 8px 24px rgba(10, 50, 60, 0.7),
-             inset 0 2px 0 rgba(255,255,255,0.7);
-          cursor: pointer;
-          transition: all 0.2s ease;
+          font-size: 13px;
         }
 
-        .login-btn:hover {
-          transform: translateY(-5px);
-          box-shadow: 
-            -12px 12px 36px rgba(10, 50, 60, 0.9),
-             12px 12px 36px rgba(10, 50, 60, 0.9);
+        .links{
+          margin-top: 12px;
+          display:flex;
+          justify-content:space-between;
+          gap: 10px;
+          flex-wrap: wrap;
+          font-size: 13px;
+          color: var(--muted);
         }
-
-        .login-btn:active {
-          transform: scale(0.95);
+        .links a{
+          color: rgba(34,211,238,.92);
+          text-decoration:none;
+          font-weight: 800;
         }
-
-        .login-btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-          transform: none;
-        }
-
-        .error-message {
-          color: #ff6b6b;
-          margin-top: 18px;
-          font-size: 14.5px;
-          font-weight: 500;
-        }
-
-        @media (max-width: 480px) {
-          .login-card {
-            padding: 36px 24px;
-          }
-          .hotel-main {
-            font-size: 24px;
-            letter-spacing: 0.3em;
-          }
-        }
+        .links a:hover{ text-decoration: underline; }
       `}</style>
 
-      <div className="login-container">
-        {/* Hotel Header */}
-        <div className="header">
-          {/* Uncomment if you have logo */}
-          {/* <img src="/images/OV.png" alt="Logo" className="logo-img" /> */}
-          <p className="hotel-small">Welcome to</p>
-          <h1 className="hotel-main">Royal Blossoms PG</h1>
-        </div>
+      <main className="page">
+        <div className="card">
+          <div className="title">Login</div>
+          <div className="subtitle">Enter your email and password to continue.</div>
 
-        {/* Login Form */}
-        <div className="login-card">
-         
           <form onSubmit={handleSubmit}>
-            <div className="input-group">
-              <label>Email Address</label>
+            <div className="field">
+              <div className="label">Email</div>
               <input
+                className="input"
                 type="email"
                 placeholder="Enter your email"
                 value={email}
@@ -220,9 +160,10 @@ export default function Login() {
               />
             </div>
 
-            <div className="input-group">
-              <label>Password</label>
+            <div className="field">
+              <div className="label">Password</div>
               <input
+                className="input"
                 type="password"
                 placeholder="Enter your password"
                 value={password}
@@ -232,14 +173,21 @@ export default function Login() {
               />
             </div>
 
-            <button type="submit" className="login-btn" disabled={loading}>
+            <button className="btn" type="submit" disabled={loading}>
               {loading ? "Signing In..." : "Login"}
             </button>
 
-            {error && <div className="error-message">{error}</div>}
+            {error && <div className="error">{error}</div>}
+
+            <div className="links">
+              <span>
+                New user? <Link to="/register">Register</Link>
+              </span>
+             
+            </div>
           </form>
         </div>
-      </div>
+      </main>
     </>
   );
 }

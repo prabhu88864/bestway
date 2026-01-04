@@ -9,13 +9,24 @@ const router = express.Router();
 
 /* ================= GET ALL PRODUCTS ================= */
 // GET /api/products?search=&category=&badge=&featured=true&inStock=true
+// GET /api/products?search=&category=&badge=&featured=true&inStock=true
 router.get("/", auth, async (req, res) => {
   try {
     const { search, category, badge, featured, inStock } = req.query;
 
     const where = { isActive: true };
 
-    if (search) where.name = { [Op.like]: `%${search}%` };
+    const q = (search || "").trim();
+    if (q) {
+      where[Op.or] = [
+        { name: { [Op.like]: `%${q}%` } },
+        { sku: { [Op.like]: `%${q}%` } },
+        { category: { [Op.like]: `%${q}%` } },
+        { brand: { [Op.like]: `%${q}%` } },
+        { manufacturer: { [Op.like]: `%${q}%` } },
+      ];
+    }
+
     if (category) where.category = category;
     if (badge) where.badge = badge;
     if (featured === "true") where.featured = true;
@@ -32,6 +43,7 @@ router.get("/", auth, async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 });
+
 
 /* ================= GET SINGLE PRODUCT ================= */
 router.get("/:id", async (req, res) => {
