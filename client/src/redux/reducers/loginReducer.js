@@ -1,37 +1,34 @@
 import * as types from "../actions/actionTypes";
 
+
+const token = localStorage.getItem("token");
+const user = JSON.parse(localStorage.getItem("user") || "null");
+
 const initialState = {
+  isLoggedIn: !!token,
+  token: token || null,
+  user: user || null,
   loading: false,
-  user: null,
-  token: null,
   error: null,
-  isLoggedIn: false,
 };
 
-const loginReducer = (state = initialState, action) => {
+export default function loginReducer(state = initialState, action) {
   switch (action.type) {
-    case types.LOGIN_START:
-      return { ...state, loading: true, error: null };
-
-    case types.LOGIN_SUCCESS:
+    case "LOGIN_SUCCESS":
       return {
         ...state,
-        loading: false,
-        user: action.payload.user,
-        token: action.payload.token,
         isLoggedIn: true,
+        token: action.payload?.token,
+        user: action.payload?.user,
+        loading: false,
+        error: null,
       };
-
-    case types.LOGIN_ERROR:
-      return { ...state, loading: false, error: action.payload };
-
-    case types.LOGOUT_USER:
-      localStorage.removeItem("token");
-      return initialState;
-
+    case "LOGOUT_USER":
+      return { ...initialState, isLoggedIn: false, token: null, user: null };
     default:
       return state;
   }
-};
+}
 
-export default loginReducer;
+
+

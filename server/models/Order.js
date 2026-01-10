@@ -7,7 +7,13 @@ const Order = sequelize.define(
     userId: { type: DataTypes.INTEGER, allowNull: false },
 
     totalAmount: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
+    addressId: { type: DataTypes.INTEGER, allowNull: false },
 
+   deliveredOn: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+    },
     status: {
       type: DataTypes.ENUM("PENDING", "PAID", "CANCELLED", "DELIVERED"),
       allowNull: false,

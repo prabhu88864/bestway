@@ -18,6 +18,8 @@ import walletRoutes from "./routes/wallet.js";
 import deliveryCharge from "./routes/deliveryCharge.js";
 import user from "./routes/user.js";
 import bannerRoutes from "./routes/banners.js";
+import Address from "./models/Address.js";
+import addressRoutes from "./routes/address.js";
 
 dotenv.config()
 const app = express()
@@ -38,6 +40,7 @@ app.use("/api/deliverycharges", deliveryCharge);
 app.use("/api/users", user);
 
 app.use("/api/banners", bannerRoutes);
+app.use("/api/addresses", addressRoutes);
 
 
 /* relations */
@@ -70,7 +73,12 @@ User.hasOne(Wallet, { foreignKey: "userId" });
 // Wallet ↔ WalletTransaction
 Wallet.hasMany(WalletTransaction, {foreignKey: "walletId",onDelete: "CASCADE",});
 WalletTransaction.belongsTo(Wallet, { foreignKey: "walletId" });
-
+// user ↔ Adress
+User.hasMany(Address, { foreignKey: "userId", as: "addresses", onDelete: "CASCADE" });
+Address.belongsTo(User, { foreignKey: "userId", as: "user" });
+// order ↔ Adress
+Order.belongsTo(Address, { foreignKey: "addressId" });
+Address.hasMany(Order, { foreignKey: "addressId" });
 
 app.listen(3000, () => console.log('Server running on 3000'))
 

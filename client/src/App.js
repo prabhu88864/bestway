@@ -24,6 +24,7 @@ import AdminOrders from "./admin/AdminOrders";
 import AdminProducts from "./admin/AdminProducts";
 import AdminBanners from "./admin/AdminBanners";
 
+
 /* ✅ Router inside helper component so we can use useLocation safely */
 function AppRoutes() {
   const location = useLocation();
@@ -86,6 +87,7 @@ function AppRoutes() {
            <Route path="/admin/orders" element={<AdminOrders/>} />
         <Route path="/admin/products" element={<AdminProducts />} />
         <Route path="/admin/banners" element={<AdminBanners />} />
+       
 
         {/* ============ DEFAULT ============ */}
         <Route

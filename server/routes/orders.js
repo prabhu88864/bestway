@@ -15,6 +15,10 @@ import Wallet from "../models/Wallet.js";
 import WalletTransaction from "../models/WalletTransaction.js";
 
 import DeliveryCharge from "../models/DeliveryCharge.js";
+import Address from "../models/Address.js";
+import isAdmin from "../middleware/isAdmin.js";
+import User from "../models/User.js";
+
 
 const router = express.Router();
 
@@ -24,10 +28,11 @@ Body: { "paymentMethod": "COD" | "WALLET" | "RAZORPAY" }
 */
 router.post("/", auth, async (req, res) => {
   try {
-    const { paymentMethod } = req.body;
+    const { paymentMethod, addressId } = req.body;
     if (!paymentMethod) {
       return res.status(400).json({ msg: "paymentMethod required" });
     }
+      if (!addressId) return res.status(400).json({ msg: "addressId required" });
 
     // Load cart with products
     const cart = await Cart.findOne({
@@ -38,6 +43,10 @@ router.post("/", auth, async (req, res) => {
     if (!cart || !cart.CartItems || cart.CartItems.length === 0) {
       return res.status(400).json({ msg: "Cart is empty" });
     }
+        const address = await Address.findOne({
+      where: { id: addressId, userId: req.user.id, isActive: true },
+    });
+    if (!address) return res.status(400).json({ msg: "Invalid address" });
 
     // Stock validation + total (billAmount)
     let billAmount = 0;
@@ -89,6 +98,7 @@ router.post("/", auth, async (req, res) => {
     const order = await Order.create({
       userId: req.user.id,
       totalAmount: grandTotal,
+      addressId: address.id,
       deliveryCharge: deliveryCharge,
       paymentMethod,
       status: "PENDING",
@@ -134,6 +144,7 @@ router.post("/", auth, async (req, res) => {
     return res.status(201).json({
       msg: "Order placed",
       orderId: order.id,
+      addressId: order.addressId,
       billAmount,
       deliveryCharge,
       grandTotal,
@@ -145,6 +156,132 @@ router.post("/", auth, async (req, res) => {
     return res.status(500).json({ msg: "Order failed", err: e.message });
   }
 });
+// ================= ADMIN: UPDATE ORDER STATUS =================
+// PATCH /api/orders/admin/:id/status
+// Body: { status: "PENDING"|"PAID"|"CANCELLED"|"DELIVERED" }
+router.patch("/admin/:id/status", auth, isAdmin, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const allowed = ["PENDING", "PAID", "CANCELLED", "DELIVERED"];
+
+    if (!status || !allowed.includes(String(status).toUpperCase())) {
+      return res.status(400).json({ msg: "Invalid status" });
+    }
+
+    const order = await Order.findByPk(req.params.id);
+    if (!order) return res.status(404).json({ msg: "Order not found" });
+
+    const next = String(status).toUpperCase();
+
+    // ✅ business rules
+    // delivered only if paid (or COD can be delivered even if paymentStatus pending)
+    if (next === "DELIVERED") {
+      if (order.status === "CANCELLED") {
+        return res.status(400).json({ msg: "Cancelled order cannot be delivered" });
+      }
+      // set deliveredOn automatically
+      await order.update({ status: "DELIVERED", deliveredOn: new Date() });
+    } else {
+      // if switching away from DELIVERED, clear deliveredOn (optional)
+      await order.update({
+        status: next,
+        deliveredOn: next === "DELIVERED" ? order.deliveredOn : null,
+      });
+    }
+
+    return res.json({
+      msg: "Status updated",
+      orderId: order.id,
+      status: order.status,
+      deliveredOn: order.deliveredOn,
+    });
+  } catch (e) {
+    console.error("PATCH /api/orders/admin/:id/status error:", e);
+    res.status(500).json({ msg: "Failed to update status" });
+  }
+});
+
+/* ================= ADMIN ORDERS =================
+GET /api/orders/admin?search=...
+search matches: orderId / status / user name/email/phone / product name
+*/
+router.get("/admin", auth, isAdmin, async (req, res) => {
+  try {
+    const search = (req.query.search || "").trim();
+    const where = {}; // admin => all orders
+
+    // numeric search => order id
+    if (search && /^\d+$/.test(search)) {
+      where.id = Number(search);
+    }
+
+    const orders = await Order.findAll({
+      where,
+      include: [
+        {
+          model: User,
+          attributes: ["id", "name", "email", "phone", "role"],
+          required: false,
+        },
+        {
+          model: Address,
+          required: false,
+        },
+        {
+          model: OrderItem,
+          include: [
+            {
+              model: Product,
+              ...(search && !/^\d+$/.test(search)
+                ? {
+                    where: {
+                      name: { [Op.like]: `%${search}%` },
+                    },
+                    required: false,
+                  }
+                : {}),
+            },
+          ],
+          required: false,
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+      distinct: true,
+    });
+
+    // ✅ if search is text, filter by status/user fields too
+    let filtered = orders;
+
+    if (search && !/^\d+$/.test(search)) {
+      const q = search.toLowerCase();
+      filtered = orders.filter((o) => {
+        const status = String(o.status || "").toLowerCase();
+        const uname = String(o.User?.name || "").toLowerCase();
+        const uemail = String(o.User?.email || "").toLowerCase();
+        const uphone = String(o.User?.phone || "").toLowerCase();
+
+        const products = (o.OrderItems || [])
+          .map((it) => it?.Product?.name || "")
+          .join(" ")
+          .toLowerCase();
+
+        return (
+          status.includes(q) ||
+          uname.includes(q) ||
+          uemail.includes(q) ||
+          uphone.includes(q) ||
+          products.includes(q)
+        );
+      });
+    }
+
+    res.json({ total: filtered.length, orders: filtered });
+  } catch (e) {
+    console.error("GET /api/orders/admin error:", e);
+    res.status(500).json({ msg: "Failed to get admin orders" });
+  }
+});
+
 
 /* ================= GET MY ORDERS =================
 GET /api/orders
@@ -168,24 +305,25 @@ router.get("/", auth, async (req, res) => {
     }
 
     const orders = await Order.findAll({
-      where,
+  where,
+  include: [
+    { model: Address }, // ✅ Order belongsTo Address
+    {
+      model: OrderItem,
       include: [
         {
-          model: OrderItem,
-          include: [
-            {
-              model: Product,
-              // ✅ product name search (optional)
-              ...(search && !/^\d+$/.test(search)
-                ? { where: { name: { [Op.like]: `%${search}%` } }, required: false }
-                : {}),
-            },
-          ],
+          model: Product,
+          ...(search && !/^\d+$/.test(search)
+            ? { where: { name: { [Op.like]: `%${search}%` } }, required: false }
+            : {}),
         },
       ],
-      order: [["createdAt", "DESC"]],
-      distinct: true,
-    });
+    },
+  ],
+  order: [["createdAt", "DESC"]],
+  distinct: true,
+});
+
 
     res.json({ total: orders.length, orders });
   } catch (e) {

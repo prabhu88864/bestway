@@ -11,6 +11,7 @@ export default function AdminDashboard() {
     products: 0,
     banners: 0,
     revenue: "₹—",
+    addresses: 0,
   });
 
   useEffect(() => {
@@ -59,12 +60,18 @@ export default function AdminDashboard() {
         .get("/api/banners")
         .then((r) => r.data?.total ?? (r.data?.banners?.length || 0))
         .catch(() => 0);
+        const addressesReq = axiosInstance
+        .get("/api/addresses/admin/all")
+        .then((r) => r.data?.total ?? (r.data?.addresses?.length || 0))
+        .catch(() => 0);
 
-      const [users, products, orders, banners] = await Promise.all([
+
+      const [users, products, orders, banners, addresses] = await Promise.all([
         usersReq,
         productsReq,
         ordersReq,
         bannersReq,
+        addressesReq,
       ]);
 
       setCounts((prev) => ({
@@ -73,6 +80,7 @@ export default function AdminDashboard() {
         products,
         orders,
         banners,
+         addresses,
       }));
     } catch (e) {
       console.log("fetchCounts error", e);
@@ -115,6 +123,8 @@ export default function AdminDashboard() {
           badge="NEW"
         />
       </div>
+     
+
 
       <div style={styles.hintBox}>
         <b>Tip:</b> Card meeda click cheste respective page open avutundi.
