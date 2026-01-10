@@ -20,6 +20,9 @@ import user from "./routes/user.js";
 import bannerRoutes from "./routes/banners.js";
 import Address from "./models/Address.js";
 import addressRoutes from "./routes/address.js";
+import razorpayRoutes from "./routes/razorpay.js";
+import paymentsRoutes from "./routes/payments.js";
+import Payment from "./models/Payment.js";
 
 dotenv.config()
 const app = express()
@@ -41,6 +44,10 @@ app.use("/api/users", user);
 
 app.use("/api/banners", bannerRoutes);
 app.use("/api/addresses", addressRoutes);
+
+app.use("/api/razorpay", razorpayRoutes);
+
+app.use("/api/payments", paymentsRoutes);
 
 
 /* relations */
@@ -79,6 +86,12 @@ Address.belongsTo(User, { foreignKey: "userId", as: "user" });
 // order ↔ Adress
 Order.belongsTo(Address, { foreignKey: "addressId" });
 Address.hasMany(Order, { foreignKey: "addressId" });
+
+Payment.belongsTo(User, { foreignKey: "userId" });
+Payment.belongsTo(Order, { foreignKey: "orderId" });
+
+Order.hasMany(Payment, { foreignKey: "orderId" });
+User.hasMany(Payment, { foreignKey: "userId" });
 
 app.listen(3000, () => console.log('Server running on 3000'))
 
