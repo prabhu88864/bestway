@@ -111,9 +111,7 @@ export default function AdminDashboard() {
         </div>
 
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={() => navigate("/")} style={styles.btn}>
-            Home
-          </button>
+         
           <button onClick={logout} style={styles.logout}>
             Logout
           </button>
@@ -135,21 +133,22 @@ export default function AdminDashboard() {
           title="Ads / Banners"
           value={counts.banners}
           onClick={() => navigate("/admin/banners")}
-          badge="NEW"
+         
         />
-      </div>
-      <StatCard
+        <StatCard
       title="Payments"
       value={counts.payments}
       onClick={() => navigate("/admin/payments")}
-      badge="NEW"
+  
     />
     <StatCard
   title="Wallet Txns"
   value={counts.walletTxns}
   onClick={() => navigate("/admin/wallet-transactions")}
-  badge="NEW"
+  
 />
+      </div>
+      
 
 
      
