@@ -23,6 +23,8 @@ import AdminUsers from "./admin/AdminUsers";
 import AdminOrders from "./admin/AdminOrders";
 import AdminProducts from "./admin/AdminProducts";
 import AdminBanners from "./admin/AdminBanners";
+import AdminPayments from "./admin/AdminPayments";
+import AdminWalletTransactions from "./admin/AdminWalletTransactions";
 
 
 /* ✅ Router inside helper component so we can use useLocation safely */
@@ -87,6 +89,8 @@ function AppRoutes() {
            <Route path="/admin/orders" element={<AdminOrders/>} />
         <Route path="/admin/products" element={<AdminProducts />} />
         <Route path="/admin/banners" element={<AdminBanners />} />
+        <Route path="/admin/payments" element={<AdminPayments />} />
+      <Route path="/admin/wallet-transactions" element={<AdminWalletTransactions />} />
        
 
         {/* ============ DEFAULT ============ */}

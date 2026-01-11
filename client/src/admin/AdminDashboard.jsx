@@ -12,6 +12,8 @@ export default function AdminDashboard() {
     banners: 0,
     revenue: "₹—",
     addresses: 0,
+    payments: 0,
+    walletTxns: 0,
   });
 
   useEffect(() => {
@@ -41,6 +43,11 @@ export default function AdminDashboard() {
         .get("/api/users", { params: { role: "USER" } })
         .then((r) => r.data?.total ?? (r.data?.users?.length || 0))
         .catch(() => 0);
+        const walletTxnsReq = axiosInstance
+  .get("/api/wallet-transactions/admin")
+  .then((r) => r.data?.total ?? (r.data?.transactions?.length || 0))
+  .catch(() => 0);
+
 
       // Products count (if your products api returns array)
       const productsReq = axiosInstance
@@ -64,14 +71,20 @@ export default function AdminDashboard() {
         .get("/api/addresses/admin/all")
         .then((r) => r.data?.total ?? (r.data?.addresses?.length || 0))
         .catch(() => 0);
+        const paymentsReq = axiosInstance
+      .get("/api/payments/admin") // ✅ admin payments api
+      .then((r) => r.data?.total ?? (r.data?.payments?.length || 0))
+      .catch(() => 0);
 
 
-      const [users, products, orders, banners, addresses] = await Promise.all([
+      const [users, products, orders, banners, addresses,payments, walletTxns] = await Promise.all([
         usersReq,
         productsReq,
         ordersReq,
         bannersReq,
         addressesReq,
+         paymentsReq,
+          walletTxnsReq
       ]);
 
       setCounts((prev) => ({
@@ -81,6 +94,8 @@ export default function AdminDashboard() {
         orders,
         banners,
          addresses,
+          payments,
+          walletTxns,
       }));
     } catch (e) {
       console.log("fetchCounts error", e);
@@ -123,6 +138,20 @@ export default function AdminDashboard() {
           badge="NEW"
         />
       </div>
+      <StatCard
+      title="Payments"
+      value={counts.payments}
+      onClick={() => navigate("/admin/payments")}
+      badge="NEW"
+    />
+    <StatCard
+  title="Wallet Txns"
+  value={counts.walletTxns}
+  onClick={() => navigate("/admin/wallet-transactions")}
+  badge="NEW"
+/>
+
+
      
 
 

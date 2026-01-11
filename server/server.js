@@ -24,6 +24,7 @@ import razorpayRoutes from "./routes/razorpay.js";
 import paymentsRoutes from "./routes/payments.js";
 import Payment from "./models/Payment.js";
 
+
 dotenv.config()
 const app = express()
 
@@ -46,6 +47,7 @@ app.use("/api/banners", bannerRoutes);
 app.use("/api/addresses", addressRoutes);
 
 app.use("/api/razorpay", razorpayRoutes);
+
 
 app.use("/api/payments", paymentsRoutes);
 

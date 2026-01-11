@@ -2,8 +2,68 @@ import express from "express";
 import auth from "../middleware/auth.js";
 import Wallet from "../models/Wallet.js";
 import WalletTransaction from "../models/WalletTransaction.js";
+import isAdmin from "../middleware/isAdmin.js";
+import User from "../models/User.js"; 
 
 const router = express.Router();
+
+
+router.get("/admin", auth, isAdmin, async (req, res) => {
+  try {
+    const { type, reason, search } = req.query;
+
+    const where = {};
+    if (type) where.type = type;
+    if (reason) where.reason = reason;
+
+    const txns = await WalletTransaction.findAll({
+      where,
+      include: [
+        {
+          model: Wallet,
+          required: true,
+          include: [
+            {
+              model: User,
+              attributes: ["id", "name", "email", "phone"],
+              required: false,
+            },
+          ],
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    // 🔍 search (user / amount / walletId)
+    let filtered = txns;
+
+    if (search) {
+      const q = search.toLowerCase();
+      filtered = txns.filter((t) => {
+        const uname = String(t.Wallet?.User?.name || "").toLowerCase();
+        const phone = String(t.Wallet?.User?.phone || "");
+        const amt = String(t.amount || "");
+        const wid = String(t.walletId || "");
+
+        return (
+          uname.includes(q) ||
+          phone.includes(q) ||
+          amt.includes(q) ||
+          wid.includes(q)
+        );
+      });
+    }
+
+    res.json({
+      total: filtered.length,
+      transactions: filtered,
+    });
+  } catch (e) {
+    console.error("ADMIN WALLET TXNS ERROR =>", e);
+    res.status(500).json({ msg: "Failed to load wallet transactions", err: e.message });
+  }
+});
+
 
 /* ================= GET WALLET =================
 GET /api/wallet
