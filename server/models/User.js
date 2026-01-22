@@ -12,6 +12,18 @@ const User = sequelize.define('User', {
     allowNull: false,
     defaultValue: "USER",
   },
+
+  
+  // ✅ referral
+  referralCode: { type: DataTypes.STRING(20), allowNull: false, unique: true },
+  sponsorId: { type: DataTypes.INTEGER, allowNull: true },
+
+  // ✅ pair counters
+  leftCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  rightCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  paidPairs: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  sponsorPaidPairs: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  
 })
 
 User.beforeCreate(async user => {

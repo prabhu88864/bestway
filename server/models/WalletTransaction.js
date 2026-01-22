@@ -14,13 +14,17 @@ const WalletTransaction = sequelize.define(
     amount: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
 
     reason: {
-      type: DataTypes.ENUM("TOPUP", "ORDER_PAYMENT", "REFUND"),
+      type: DataTypes.ENUM("TOPUP", "ORDER_PAYMENT", "REFUND",  
+          "REFERRAL_JOIN_BONUS",   // 5000
+      "PAIR_BONUS",            // 3000 (self)
+      "DOWNLINE_PAIR_BONUS" ),
       allowNull: false,
     },
 
     orderId: { type: DataTypes.INTEGER, allowNull: true },
+      meta: { type: DataTypes.JSON, allowNull: true },
   },
-  { timestamps: true }
+{ timestamps: true }
 );
 
 export default WalletTransaction;

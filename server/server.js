@@ -23,6 +23,16 @@ import addressRoutes from "./routes/address.js";
 import razorpayRoutes from "./routes/razorpay.js";
 import paymentsRoutes from "./routes/payments.js";
 import Payment from "./models/Payment.js";
+import BinaryNode from "./models/BinaryNode.js";
+import Referral from "./models/Referral.js";
+import referralRoutes from "./routes/referrals.js";
+import binaryRoutes from "./routes/binary.js";
+import ReferralLink from "./models/ReferralLink.js";
+import ReferralEdge from "./models/ReferralEdge.js";
+import referralTreeRoutes from "./routes/referralTree.js";
+import settingsRoutes from "./routes/settings.js";
+import AppSetting from "./models/AppSetting.js";
+
 
 
 dotenv.config()
@@ -50,6 +60,10 @@ app.use("/api/razorpay", razorpayRoutes);
 
 
 app.use("/api/payments", paymentsRoutes);
+app.use("/api/referrals", referralRoutes);
+app.use("/api/binary", binaryRoutes);
+app.use("/api/referrals-tree", referralTreeRoutes);
+app.use("/api/settings", settingsRoutes);
 
 
 /* relations */
@@ -94,6 +108,16 @@ Payment.belongsTo(Order, { foreignKey: "orderId" });
 
 Order.hasMany(Payment, { foreignKey: "orderId" });
 User.hasMany(Payment, { foreignKey: "userId" });
+
+
+ReferralLink.belongsTo(User, { foreignKey: "sponsorId" });
+
+Referral.belongsTo(User, { foreignKey: "sponsorId", as: "sponsor" });
+Referral.belongsTo(User, { foreignKey: "referredUserId", as: "referredUser" });
+
+ReferralEdge.belongsTo(User, { foreignKey: "sponsorId", as: "sponsor" });
+ReferralEdge.belongsTo(User, { foreignKey: "childId", as: "child" });
+
 
 app.listen(3000, () => console.log('Server running on 3000'))
 
