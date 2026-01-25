@@ -35,6 +35,7 @@ import AppSetting from "./models/AppSetting.js";
 
 
 
+
 dotenv.config()
 const app = express()
 
@@ -64,6 +65,7 @@ app.use("/api/referrals", referralRoutes);
 app.use("/api/binary", binaryRoutes);
 app.use("/api/referrals-tree", referralTreeRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/binary", referralTreeRoutes);
 
 
 /* relations */
