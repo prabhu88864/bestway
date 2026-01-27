@@ -28,6 +28,61 @@ import { getSettingNumber } from "../utils/appSettings.js";
 
 const router = express.Router();
 
+async function tryReleasePendingPairBonuses(t) {
+  const minSpend = 30000;
+
+  const isUnlockedUser = async (userId) => {
+    const w = await Wallet.findOne({ where: { userId }, transaction: t });
+    return !!w?.isUnlocked && Number(w?.totalSpent || 0) >= minSpend;
+  };
+
+  // find pending PAIR_BONUS transactions
+  const pendingPairTxns = await WalletTransaction.findAll({
+    where: {
+      type: "CREDIT",
+      reason: "PAIR_BONUS",
+    },
+    transaction: t,
+    lock: t.LOCK.UPDATE,
+  });
+
+  for (const txn of pendingPairTxns) {
+    if (txn?.meta?.pending !== true) continue;
+
+    // receiver (upline) is wallet owner
+    const wallet = await Wallet.findByPk(txn.walletId, { transaction: t });
+    if (!wallet) continue;
+
+    const receiverId = wallet.userId;
+
+    // try to get left/right from meta
+    const leftUserId =
+      txn.meta?.pairs?.[0]?.leftUserId || txn.meta?.leftUserId;
+    const rightUserId =
+      txn.meta?.pairs?.[0]?.rightUserId || txn.meta?.rightUserId;
+
+    if (!leftUserId || !rightUserId) continue;
+
+    const [uOk, lOk, rOk] = await Promise.all([
+      isUnlockedUser(receiverId),
+      isUnlockedUser(leftUserId),
+      isUnlockedUser(rightUserId),
+    ]);
+
+    if (uOk && lOk && rOk) {
+      // ✅ release now
+      wallet.balance = Number(wallet.balance || 0) + Number(txn.amount || 0);
+      await wallet.save({ transaction: t });
+
+      txn.meta.pending = false;
+      txn.meta.releasedAt = new Date();
+      txn.meta.pendingReason = null;
+      await txn.save({ transaction: t });
+    }
+  }
+}
+
+
 async function addSpendAndUnlockIfNeeded({ userId, amount, t }) {
   const wallet = await Wallet.findOne({
     where: { userId },
@@ -398,6 +453,7 @@ router.patch("/admin/:id/status", auth, isAdmin, async (req, res) => {
           sponsorId: order.userId,
           t,
         });
+          await tryReleasePendingPairBonuses(t);
       }
     }
 

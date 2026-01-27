@@ -1439,7 +1439,1027 @@
 
 // export default router;
 
-// ========================= routes/auth.js (FULL CODE) =========================
+// // ========================= routes/auth.js (FULL CODE) =========================
+// import express from "express";
+// import bcrypt from "bcryptjs";
+// import jwt from "jsonwebtoken";
+// import { sequelize } from "../config/db.js";
+
+// import User from "../models/User.js";
+// import Wallet from "../models/Wallet.js";
+// import WalletTransaction from "../models/WalletTransaction.js";
+
+// import Referral from "../models/Referral.js";
+// import ReferralLink from "../models/ReferralLink.js";
+// import BinaryNode from "../models/BinaryNode.js";
+
+// import PairPending from "../models/PairPending.js";
+// import PairMatch from "../models/PairMatch.js";
+
+// const router = express.Router();
+
+// console.log("AUTH FILE: JOIN BONUS AFTER 30K SPEND (pending txn until unlock) + PAIR ENABLED");
+
+// const MIN_SPEND_UNLOCK = 30000; // ✅ 30,000 spend after DELIVERED (you will update wallet.totalSpent in orders route)
+// const JOIN_BONUS = 5000;
+// const PAIR_BONUS = 3000;
+
+// const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "1d" });
+
+// const generateReferralCode = () =>
+//   "R" + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+// // ========================= WALLET CREDIT (returns txn) =========================
+// // ✅ JOIN BONUS rule:
+// // - sponsor wallet must be unlocked (totalSpent >= 30000)
+// // - referred user wallet must be unlocked (totalSpent >= 30000)
+// // If not unlocked -> create CREDIT txn as pending (balance NOT added)
+// async function creditWallet({ userId, amount, reason, meta, t }) {
+//   const wallet = await Wallet.findOne({
+//     where: { userId },
+//     transaction: t,
+//     lock: t.LOCK.UPDATE,
+//   });
+//   if (!wallet) throw new Error("Wallet not found");
+
+//   // ✅ normalize
+//   const sponsorUnlocked =
+//     !!wallet.isUnlocked && Number(wallet.totalSpent || 0) >= Number(MIN_SPEND_UNLOCK);
+
+//   let canCredit = true;
+//   let pendingReason = null;
+
+//   if (reason === "REFERRAL_JOIN_BONUS") {
+//     const referredUserId = meta?.referredUserId;
+
+//     if (!referredUserId) {
+//       canCredit = false;
+//       pendingReason = "MISSING_REFERRED_USER_ID";
+//     } else {
+//       const referredWallet = await Wallet.findOne({
+//         where: { userId: referredUserId },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+
+//       const referredUnlocked =
+//         !!referredWallet?.isUnlocked &&
+//         Number(referredWallet?.totalSpent || 0) >= Number(MIN_SPEND_UNLOCK);
+
+//       if (!sponsorUnlocked) {
+//         canCredit = false;
+//         pendingReason = "SPONSOR_NOT_UNLOCKED";
+//       } else if (!referredUnlocked) {
+//         canCredit = false;
+//         pendingReason = "REFERRED_NOT_UNLOCKED";
+//       }
+//     }
+//   }
+
+//   // ✅ not eligible now -> create pending txn only (no balance add)
+//   if (!canCredit) {
+//     const txn = await WalletTransaction.create(
+//       {
+//         walletId: wallet.id,
+//         type: "CREDIT",
+//         amount,
+//         reason,
+//         meta: {
+//           ...(meta || {}),
+//           pending: true,
+//           pendingReason,
+//           minSpendRequired: MIN_SPEND_UNLOCK,
+//           createdButNotCredited: true,
+//         },
+//       },
+//       { transaction: t }
+//     );
+//     return txn;
+//   }
+
+//   // ✅ eligible -> add to balance + create txn
+//   wallet.balance = Number(wallet.balance || 0) + Number(amount || 0);
+//   await wallet.save({ transaction: t });
+
+//   const txn = await WalletTransaction.create(
+//     { walletId: wallet.id, type: "CREDIT", amount, reason, meta: meta || null },
+//     { transaction: t }
+//   );
+
+//   return txn;
+// }
+
+// // ========================= BINARY NODE HELPERS =========================
+// async function ensureNode(userId, t) {
+//   let node = await BinaryNode.findOne({
+//     where: { userId },
+//     transaction: t,
+//     lock: t.LOCK.UPDATE,
+//   });
+//   if (!node) {
+//     node = await BinaryNode.create(
+//       { userId, parentId: null, position: null, leftChildId: null, rightChildId: null },
+//       { transaction: t }
+//     );
+//   }
+//   return node;
+// }
+
+// // Spillover placement: go down LEFT/RIGHT path until empty slot
+// async function findPlacementParent({ sponsorUserId, position, t }) {
+//   let current = await BinaryNode.findOne({
+//     where: { userId: sponsorUserId },
+//     transaction: t,
+//     lock: t.LOCK.UPDATE,
+//   });
+//   if (!current) throw new Error("Sponsor node not found");
+
+//   while (true) {
+//     if (position === "LEFT") {
+//       if (!current.leftChildId) return current;
+//       current = await BinaryNode.findOne({
+//         where: { userId: current.leftChildId },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+//     } else {
+//       if (!current.rightChildId) return current;
+//       current = await BinaryNode.findOne({
+//         where: { userId: current.rightChildId },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+//     }
+//     if (!current) throw new Error("Broken tree: missing node while placing");
+//   }
+// }
+
+// // ========================= PAIRING (PairPending + PairMatch) =========================
+// async function updateUplineCountsAndBonuses({ startParentUserId, placedPosition, newlyJoinedUserId, t }) {
+//   let node = await BinaryNode.findOne({
+//     where: { userId: startParentUserId },
+//     transaction: t,
+//   });
+
+//   let pos = placedPosition;
+
+//   while (node) {
+//     const uplineUser = await User.findByPk(node.userId, {
+//       transaction: t,
+//       lock: t.LOCK.UPDATE,
+//     });
+//     if (!uplineUser) break;
+
+//     // 1) increment counts
+//     if (pos === "LEFT") uplineUser.leftCount = Number(uplineUser.leftCount || 0) + 1;
+//     else uplineUser.rightCount = Number(uplineUser.rightCount || 0) + 1;
+
+//     // 2) store pending entry (exact downline id)
+//     await PairPending.create(
+//       { uplineUserId: uplineUser.id, side: pos, downlineUserId: newlyJoinedUserId, isUsed: false },
+//       { transaction: t }
+//     );
+
+//     // 3) FIFO unused left & right
+//     const leftUnused = await PairPending.findAll({
+//       where: { uplineUserId: uplineUser.id, side: "LEFT", isUsed: false },
+//       order: [["id", "ASC"]],
+//       transaction: t,
+//       lock: t.LOCK.UPDATE,
+//     });
+
+//     const rightUnused = await PairPending.findAll({
+//       where: { uplineUserId: uplineUser.id, side: "RIGHT", isUsed: false },
+//       order: [["id", "ASC"]],
+//       transaction: t,
+//       lock: t.LOCK.UPDATE,
+//     });
+
+//     const canMake = Math.min(leftUnused.length, rightUnused.length);
+
+//     if (canMake > 0) {
+//       const pairs = [];
+//       for (let i = 0; i < canMake; i++) pairs.push({ leftP: leftUnused[i], rightP: rightUnused[i] });
+
+//       const leftIds = pairs.map((p) => p.leftP.downlineUserId);
+//       const rightIds = pairs.map((p) => p.rightP.downlineUserId);
+
+//       const [leftUsers, rightUsers] = await Promise.all([
+//         User.findAll({ where: { id: leftIds }, attributes: ["id", "name"], transaction: t }),
+//         User.findAll({ where: { id: rightIds }, attributes: ["id", "name"], transaction: t }),
+//       ]);
+
+//       const leftMap = new Map(leftUsers.map((u) => [u.id, u]));
+//       const rightMap = new Map(rightUsers.map((u) => [u.id, u]));
+
+//       const createdMatches = [];
+//       for (const p of pairs) {
+//         const m = await PairMatch.create(
+//           {
+//             uplineUserId: uplineUser.id,
+//             leftUserId: p.leftP.downlineUserId,
+//             rightUserId: p.rightP.downlineUserId,
+//             bonusEach: PAIR_BONUS,
+//             amount: PAIR_BONUS,
+//             matchedAt: new Date(),
+//           },
+//           { transaction: t }
+//         );
+
+//         await p.leftP.update({ isUsed: true, usedInPairMatchId: m.id }, { transaction: t });
+//         await p.rightP.update({ isUsed: true, usedInPairMatchId: m.id }, { transaction: t });
+
+//         createdMatches.push(m);
+//       }
+
+//       // NOTE: Pair bonus still credits immediately here.
+//       // Later you can apply same "30k unlock" rule to PAIR_BONUS too.
+//       const txn = await creditWallet({
+//         userId: uplineUser.id,
+//         amount: canMake * PAIR_BONUS,
+//         reason: "PAIR_BONUS",
+//         meta: {
+//           each: PAIR_BONUS,
+//           newPairs: canMake,
+//           countsAfter: { left: Number(uplineUser.leftCount || 0), right: Number(uplineUser.rightCount || 0) },
+//           triggeredSide: placedPosition,
+//           triggeredByUserId: startParentUserId,
+//           pairs: createdMatches.map((m) => ({
+//             pairMatchId: m.id,
+//             leftUserId: m.leftUserId,
+//             leftUserName: leftMap.get(m.leftUserId)?.name || null,
+//             rightUserId: m.rightUserId,
+//             rightUserName: rightMap.get(m.rightUserId)?.name || null,
+//             matchedAt: m.matchedAt,
+//           })),
+//         },
+//         t,
+//       });
+
+//       for (const m of createdMatches) {
+//         await m.update({ walletTransactionId: txn.id }, { transaction: t });
+//       }
+
+//       uplineUser.paidPairs = Number(uplineUser.paidPairs || 0) + canMake;
+//     }
+
+//     await uplineUser.save({ transaction: t });
+
+//     // move up
+//     const currentNode = await BinaryNode.findOne({
+//       where: { userId: uplineUser.id },
+//       transaction: t,
+//     });
+
+//     pos = currentNode?.position;
+//     if (!currentNode?.parentId) break;
+
+//     node = await BinaryNode.findOne({
+//       where: { userId: currentNode.parentId },
+//       transaction: t,
+//     });
+//   }
+// }
+
+// // ========================= REGISTER =========================
+// // POST /api/auth/register
+// // Body: { name,email,phone,password, referralCode?: "<link-code>" }
+// router.post("/register", async (req, res) => {
+//   const { name, email, phone, password } = req.body;
+//   const referralCode = req.body.referralCode;
+
+//   const t = await sequelize.transaction();
+//   try {
+//     if (!name || !email || !phone || !password) throw new Error("name,email,phone,password required");
+
+//     const existsEmail = await User.findOne({ where: { email }, transaction: t });
+//     if (existsEmail) throw new Error("Email already exists");
+
+//     const existsPhone = await User.findOne({ where: { phone }, transaction: t });
+//     if (existsPhone) throw new Error("Phone already exists");
+
+//     // unique user referralCode
+//     let myCode = generateReferralCode();
+//     while (await User.findOne({ where: { referralCode: myCode }, transaction: t })) {
+//       myCode = generateReferralCode();
+//     }
+
+//     // create user
+//     const user = await User.create({ name, email, phone, password, referralCode: myCode }, { transaction: t });
+
+//     // create wallet (must have totalSpent + isUnlocked fields in model)
+//     await Wallet.create(
+//       { userId: user.id, balance: 0, totalSpent: 0, isUnlocked: false },
+//       { transaction: t }
+//     );
+
+//     // create binary node for user
+//     await BinaryNode.create(
+//       { userId: user.id, parentId: null, position: null, leftChildId: null, rightChildId: null },
+//       { transaction: t }
+//     );
+
+//     // ========================= APPLY REFERRAL (SPILLOVER) =========================
+//     if (referralCode) {
+//       const link = await ReferralLink.findOne({
+//         where: { code: referralCode, isActive: true },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+//       if (!link) throw new Error("Invalid referral code");
+
+//       const sponsor = await User.findByPk(link.sponsorId, { transaction: t, lock: t.LOCK.UPDATE });
+//       if (!sponsor) throw new Error("Sponsor not found");
+
+//       const pos = String(link.position || "").toUpperCase();
+//       if (!["LEFT", "RIGHT"].includes(pos)) throw new Error("Invalid referral position");
+
+//       // direct sponsor
+//       user.sponsorId = sponsor.id;
+//       await user.save({ transaction: t });
+
+//       // ensure sponsor node exists
+//       await ensureNode(sponsor.id, t);
+
+//       // spillover placement down the chosen side
+//       const placedParent = await findPlacementParent({ sponsorUserId: sponsor.id, position: pos, t });
+
+//       // audit referral row
+//       const refRow = await Referral.create(
+//         { sponsorId: sponsor.id, referredUserId: user.id, position: pos, joinBonusPaid: false },
+//         { transaction: t }
+//       );
+
+//       // attach my node under placement parent
+//       const myNode = await BinaryNode.findOne({
+//         where: { userId: user.id },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+
+//       myNode.parentId = placedParent.userId;
+//       myNode.position = pos;
+//       await myNode.save({ transaction: t });
+
+//       // set placement parent's child pointer
+//       if (pos === "LEFT") placedParent.leftChildId = user.id;
+//       else placedParent.rightChildId = user.id;
+//       await placedParent.save({ transaction: t });
+
+//       // ✅ JOIN BONUS CALL SAME — BUT creditWallet will hold it until 30k unlock
+//       if (!refRow.joinBonusPaid) {
+//         const txn = await creditWallet({
+//           userId: sponsor.id,
+//           amount: JOIN_BONUS,
+//           reason: "REFERRAL_JOIN_BONUS",
+//           meta: {
+//             referredUserId: user.id,
+//             referredName: user.name,
+//             placedUnderUserId: placedParent.userId,
+//             placedPosition: pos,
+//           },
+//           t,
+//         });
+
+//         // ✅ mark as paid ONLY if it was actually credited (not pending)
+//         if (txn?.meta?.pending !== true) {
+//           refRow.joinBonusPaid = true;
+//           await refRow.save({ transaction: t });
+//         }
+//       }
+
+//       // ✅ upline pair logic (still immediate; later we can apply 30k rule to pairs too)
+//       await updateUplineCountsAndBonuses({
+//         startParentUserId: placedParent.userId,
+//         placedPosition: pos,
+//         newlyJoinedUserId: user.id,
+//         t,
+//       });
+//     }
+
+//     await t.commit();
+
+//     const token = signToken(user.id);
+//     return res.json({
+//       msg: "Registered",
+//       token,
+//       user: {
+//         id: user.id,
+//         name: user.name,
+//         role: user.role,
+//         email: user.email,
+//         phone: user.phone,
+//         referralCode: user.referralCode,
+//       },
+//     });
+//   } catch (err) {
+//     await t.rollback();
+//     return res.status(400).json({ msg: err.message });
+//   }
+// });
+
+// // ========================= LOGIN =========================
+// router.post("/login", async (req, res) => {
+//   try {
+//     const { email, password } = req.body;
+//     if (!email || !password) return res.status(400).json({ msg: "email,password required" });
+
+//     const user = await User.findOne({ where: { email } });
+//     if (!user) return res.status(400).json({ msg: "Invalid credentials" });
+
+//     const ok = await bcrypt.compare(password, user.password);
+//     if (!ok) return res.status(400).json({ msg: "Invalid credentials" });
+
+//     const token = signToken(user.id);
+//     return res.json({
+//       msg: "Logged in",
+//       token,
+//       user: {
+//         id: user.id,
+//         name: user.name,
+//         role: user.role,
+//         email: user.email,
+//         phone: user.phone,
+//         referralCode: user.referralCode,
+//       },
+//     });
+//   } catch (err) {
+//     return res.status(500).json({ msg: err.message });
+//   }
+// });
+
+// export default router;
+
+// // ========================= routes/auth.js (FULL CODE) =========================
+// import express from "express";
+// import bcrypt from "bcryptjs";
+// import jwt from "jsonwebtoken";
+// import { sequelize } from "../config/db.js";
+
+// import User from "../models/User.js";
+// import Wallet from "../models/Wallet.js";
+// import WalletTransaction from "../models/WalletTransaction.js";
+
+// import Referral from "../models/Referral.js";
+// import ReferralLink from "../models/ReferralLink.js";
+// import BinaryNode from "../models/BinaryNode.js";
+
+// import PairPending from "../models/PairPending.js";
+// import PairMatch from "../models/PairMatch.js";
+
+// const router = express.Router();
+
+// console.log("AUTH FILE: JOIN + PAIR BONUS (pending until 30k unlock) + PAIR-PENDING + PAIR-MATCH");
+
+// const MIN_SPEND_UNLOCK = 30000;
+// const JOIN_BONUS = 5000;
+// const PAIR_BONUS = 3000;
+
+// const signToken = (id) =>
+//   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "1d" });
+
+// const generateReferralCode = () =>
+//   "R" + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+// // ========================= WALLET CREDIT (returns txn) =========================
+// // ✅ JOIN + PAIR both pending rules
+// async function creditWallet({ userId, amount, reason, meta, t }) {
+//   const wallet = await Wallet.findOne({
+//     where: { userId },
+//     transaction: t,
+//     lock: t.LOCK.UPDATE,
+//   });
+//   if (!wallet) throw new Error("Wallet not found");
+
+//   const minSpend = MIN_SPEND_UNLOCK;
+
+//   const isUnlocked = (w) =>
+//     !!w?.isUnlocked && Number(w?.totalSpent || 0) >= Number(minSpend);
+
+//   const receiverUnlocked = isUnlocked(wallet);
+
+//   let canCredit = true;
+//   let pendingReason = null;
+
+//   // ✅ RULE 1: JOIN BONUS -> sponsor + referred both unlocked
+//   if (reason === "REFERRAL_JOIN_BONUS") {
+//     const referredUserId = meta?.referredUserId;
+//     if (!referredUserId) {
+//       canCredit = false;
+//       pendingReason = "MISSING_REFERRED_USER_ID";
+//     } else {
+//       const referredWallet = await Wallet.findOne({
+//         where: { userId: referredUserId },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+
+//       if (!receiverUnlocked) {
+//         canCredit = false;
+//         pendingReason = "SPONSOR_NOT_UNLOCKED";
+//       } else if (!isUnlocked(referredWallet)) {
+//         canCredit = false;
+//         pendingReason = "REFERRED_NOT_UNLOCKED";
+//       }
+//     }
+//   }
+
+//   // ✅ RULE 2: PAIR BONUS -> upline + left + right all unlocked
+//   if (reason === "PAIR_BONUS") {
+//     // If multiple pairs credited in one txn, we validate all pairs.
+//     const pairs = Array.isArray(meta?.pairs) && meta.pairs.length
+//       ? meta.pairs
+//       : [{ leftUserId: meta?.leftUserId, rightUserId: meta?.rightUserId }];
+
+//     if (!receiverUnlocked) {
+//       canCredit = false;
+//       pendingReason = "UPLINE_NOT_UNLOCKED";
+//     } else {
+//       for (const p of pairs) {
+//         const leftUserId = p?.leftUserId;
+//         const rightUserId = p?.rightUserId;
+
+//         if (!leftUserId || !rightUserId) {
+//           canCredit = false;
+//           pendingReason = "MISSING_LEFT_RIGHT_IDS";
+//           break;
+//         }
+
+//         const [leftW, rightW] = await Promise.all([
+//           Wallet.findOne({
+//             where: { userId: leftUserId },
+//             transaction: t,
+//             lock: t.LOCK.UPDATE,
+//           }),
+//           Wallet.findOne({
+//             where: { userId: rightUserId },
+//             transaction: t,
+//             lock: t.LOCK.UPDATE,
+//           }),
+//         ]);
+
+//         if (!isUnlocked(leftW)) {
+//           canCredit = false;
+//           pendingReason = "LEFT_NOT_UNLOCKED";
+//           break;
+//         }
+//         if (!isUnlocked(rightW)) {
+//           canCredit = false;
+//           pendingReason = "RIGHT_NOT_UNLOCKED";
+//           break;
+//         }
+//       }
+//     }
+//   }
+
+//   // ✅ If not eligible -> create pending txn only (no balance add)
+//   if (!canCredit) {
+//     const txn = await WalletTransaction.create(
+//       {
+//         walletId: wallet.id,
+//         type: "CREDIT",
+//         amount,
+//         reason,
+//         meta: {
+//           ...(meta || {}),
+//           pending: true,
+//           pendingReason,
+//           minSpendRequired: minSpend,
+//           createdButNotCredited: true,
+//         },
+//       },
+//       { transaction: t }
+//     );
+//     return txn;
+//   }
+
+//   // ✅ Eligible -> credit wallet
+//   wallet.balance = Number(wallet.balance || 0) + Number(amount || 0);
+//   await wallet.save({ transaction: t });
+
+//   const txn = await WalletTransaction.create(
+//     { walletId: wallet.id, type: "CREDIT", amount, reason, meta: meta || null },
+//     { transaction: t }
+//   );
+
+//   return txn;
+// }
+
+// // ========================= BINARY NODE HELPERS =========================
+// async function ensureNode(userId, t) {
+//   let node = await BinaryNode.findOne({
+//     where: { userId },
+//     transaction: t,
+//     lock: t.LOCK.UPDATE,
+//   });
+//   if (!node) {
+//     node = await BinaryNode.create(
+//       {
+//         userId,
+//         parentId: null,
+//         position: null,
+//         leftChildId: null,
+//         rightChildId: null,
+//       },
+//       { transaction: t }
+//     );
+//   }
+//   return node;
+// }
+
+// // Spillover placement: go down LEFT/RIGHT path until empty slot
+// async function findPlacementParent({ sponsorUserId, position, t }) {
+//   let current = await BinaryNode.findOne({
+//     where: { userId: sponsorUserId },
+//     transaction: t,
+//     lock: t.LOCK.UPDATE,
+//   });
+//   if (!current) throw new Error("Sponsor node not found");
+
+//   while (true) {
+//     if (position === "LEFT") {
+//       if (!current.leftChildId) return current;
+
+//       current = await BinaryNode.findOne({
+//         where: { userId: current.leftChildId },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+//     } else {
+//       if (!current.rightChildId) return current;
+
+//       current = await BinaryNode.findOne({
+//         where: { userId: current.rightChildId },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+//     }
+
+//     if (!current) throw new Error("Broken tree: missing node while placing");
+//   }
+// }
+
+// // ========================= PAIRING (PairPending + PairMatch) =========================
+// async function updateUplineCountsAndBonuses({
+//   startParentUserId,
+//   placedPosition,
+//   newlyJoinedUserId,
+//   t,
+// }) {
+//   let node = await BinaryNode.findOne({
+//     where: { userId: startParentUserId },
+//     transaction: t,
+//   });
+
+//   let pos = placedPosition;
+
+//   while (node) {
+//     const uplineUser = await User.findByPk(node.userId, {
+//       transaction: t,
+//       lock: t.LOCK.UPDATE,
+//     });
+//     if (!uplineUser) break;
+
+//     // 1) increment counts
+//     if (pos === "LEFT")
+//       uplineUser.leftCount = Number(uplineUser.leftCount || 0) + 1;
+//     else uplineUser.rightCount = Number(uplineUser.rightCount || 0) + 1;
+
+//     // 2) store pending entry (exact downline id)
+//     await PairPending.create(
+//       {
+//         uplineUserId: uplineUser.id,
+//         side: pos,
+//         downlineUserId: newlyJoinedUserId,
+//         isUsed: false,
+//       },
+//       { transaction: t }
+//     );
+
+//     // 3) find FIFO unused left & right
+//     const leftUnused = await PairPending.findAll({
+//       where: { uplineUserId: uplineUser.id, side: "LEFT", isUsed: false },
+//       order: [["id", "ASC"]],
+//       transaction: t,
+//       lock: t.LOCK.UPDATE,
+//     });
+
+//     const rightUnused = await PairPending.findAll({
+//       where: { uplineUserId: uplineUser.id, side: "RIGHT", isUsed: false },
+//       order: [["id", "ASC"]],
+//       transaction: t,
+//       lock: t.LOCK.UPDATE,
+//     });
+
+//     const canMake = Math.min(leftUnused.length, rightUnused.length);
+
+//     if (canMake > 0) {
+//       // Build pairs FIFO
+//       const pairs = [];
+//       for (let i = 0; i < canMake; i++) {
+//         pairs.push({ leftP: leftUnused[i], rightP: rightUnused[i] });
+//       }
+
+//       // fetch names for meta
+//       const leftIds = pairs.map((p) => p.leftP.downlineUserId);
+//       const rightIds = pairs.map((p) => p.rightP.downlineUserId);
+
+//       const [leftUsers, rightUsers] = await Promise.all([
+//         User.findAll({
+//           where: { id: leftIds },
+//           attributes: ["id", "name"],
+//           transaction: t,
+//         }),
+//         User.findAll({
+//           where: { id: rightIds },
+//           attributes: ["id", "name"],
+//           transaction: t,
+//         }),
+//       ]);
+
+//       const leftMap = new Map(leftUsers.map((u) => [u.id, u]));
+//       const rightMap = new Map(rightUsers.map((u) => [u.id, u]));
+
+//       // create PairMatch rows + mark pendings used
+//       const createdMatches = [];
+//       for (const p of pairs) {
+//         const leftDownId = p.leftP.downlineUserId;
+//         const rightDownId = p.rightP.downlineUserId;
+
+//         const m = await PairMatch.create(
+//           {
+//             uplineUserId: uplineUser.id,
+//             leftUserId: leftDownId,
+//             rightUserId: rightDownId,
+//             bonusEach: PAIR_BONUS,
+//             amount: PAIR_BONUS,
+//             matchedAt: new Date(),
+//           },
+//           { transaction: t }
+//         );
+
+//         await p.leftP.update(
+//           { isUsed: true, usedInPairMatchId: m.id },
+//           { transaction: t }
+//         );
+//         await p.rightP.update(
+//           { isUsed: true, usedInPairMatchId: m.id },
+//           { transaction: t }
+//         );
+
+//         createdMatches.push(m);
+//       }
+
+//       // ✅ credit wallet (one txn for multiple pairs)
+//       // NOW this also respects 30k rule for upline + left + right using creditWallet()
+//       const txn = await creditWallet({
+//         userId: uplineUser.id,
+//         amount: canMake * PAIR_BONUS,
+//         reason: "PAIR_BONUS",
+//         meta: {
+//           each: PAIR_BONUS,
+//           newPairs: canMake,
+//           countsAfter: {
+//             left: Number(uplineUser.leftCount || 0),
+//             right: Number(uplineUser.rightCount || 0),
+//           },
+//           triggeredSide: placedPosition,
+//           triggeredByUserId: startParentUserId,
+//           pairs: createdMatches.map((m) => ({
+//             pairMatchId: m.id,
+//             leftUserId: m.leftUserId,
+//             leftUserName: leftMap.get(m.leftUserId)?.name || null,
+//             rightUserId: m.rightUserId,
+//             rightUserName: rightMap.get(m.rightUserId)?.name || null,
+//             matchedAt: m.matchedAt,
+//           })),
+//         },
+//         t,
+//       });
+
+//       // link PairMatch -> walletTransactionId (even if pending, we keep the link)
+//       for (const m of createdMatches) {
+//         await m.update({ walletTransactionId: txn.id }, { transaction: t });
+//       }
+
+//       // Note: paidPairs is "pairs created/processed", not necessarily "paid to wallet now"
+//       uplineUser.paidPairs = Number(uplineUser.paidPairs || 0) + canMake;
+//     }
+
+//     await uplineUser.save({ transaction: t });
+
+//     // move up
+//     const currentNode = await BinaryNode.findOne({
+//       where: { userId: uplineUser.id },
+//       transaction: t,
+//     });
+
+//     pos = currentNode?.position;
+//     if (!currentNode?.parentId) break;
+
+//     node = await BinaryNode.findOne({
+//       where: { userId: currentNode.parentId },
+//       transaction: t,
+//     });
+//   }
+// }
+
+// // ========================= REGISTER =========================
+// // POST /api/auth/register
+// // Body: { name,email,phone,password, referralCode?: "<link-code>" }
+// router.post("/register", async (req, res) => {
+//   const { name, email, phone, password } = req.body;
+//   const referralCode = req.body.referralCode;
+
+//   const t = await sequelize.transaction();
+//   try {
+//     if (!name || !email || !phone || !password) {
+//       throw new Error("name,email,phone,password required");
+//     }
+
+//     // prevent duplicates
+//     const existsEmail = await User.findOne({ where: { email }, transaction: t });
+//     if (existsEmail) throw new Error("Email already exists");
+
+//     const existsPhone = await User.findOne({ where: { phone }, transaction: t });
+//     if (existsPhone) throw new Error("Phone already exists");
+
+//     // unique user referralCode
+//     let myCode = generateReferralCode();
+//     while (await User.findOne({ where: { referralCode: myCode }, transaction: t })) {
+//       myCode = generateReferralCode();
+//     }
+
+//     // create user
+//     const user = await User.create(
+//       { name, email, phone, password, referralCode: myCode },
+//       { transaction: t }
+//     );
+
+//     // create wallet
+//     await Wallet.create(
+//       { userId: user.id, balance: 0, totalSpent: 0, isUnlocked: false },
+//       { transaction: t }
+//     );
+
+//     // create binary node for user
+//     await BinaryNode.create(
+//       {
+//         userId: user.id,
+//         parentId: null,
+//         position: null,
+//         leftChildId: null,
+//         rightChildId: null,
+//       },
+//       { transaction: t }
+//     );
+
+//     // ========================= APPLY REFERRAL (SPILLOVER) =========================
+//     if (referralCode) {
+//       const link = await ReferralLink.findOne({
+//         where: { code: referralCode, isActive: true },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+//       if (!link) throw new Error("Invalid referral code");
+
+//       const sponsor = await User.findByPk(link.sponsorId, {
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+//       if (!sponsor) throw new Error("Sponsor not found");
+
+//       const pos = String(link.position || "").toUpperCase();
+//       if (!["LEFT", "RIGHT"].includes(pos)) throw new Error("Invalid referral position");
+
+//       // direct sponsor
+//       user.sponsorId = sponsor.id;
+//       await user.save({ transaction: t });
+
+//       // ensure sponsor node exists
+//       await ensureNode(sponsor.id, t);
+
+//       // spillover placement down the chosen side
+//       const placedParent = await findPlacementParent({
+//         sponsorUserId: sponsor.id,
+//         position: pos,
+//         t,
+//       });
+
+//       // audit referral row
+//       const refRow = await Referral.create(
+//         {
+//           sponsorId: sponsor.id,
+//           referredUserId: user.id,
+//           position: pos,
+//           joinBonusPaid: false,
+//         },
+//         { transaction: t }
+//       );
+
+//       // attach my node under placement parent
+//       const myNode = await BinaryNode.findOne({
+//         where: { userId: user.id },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+
+//       myNode.parentId = placedParent.userId;
+//       myNode.position = pos;
+//       await myNode.save({ transaction: t });
+
+//       // set placement parent's child pointer
+//       if (pos === "LEFT") placedParent.leftChildId = user.id;
+//       else placedParent.rightChildId = user.id;
+//       await placedParent.save({ transaction: t });
+
+//       // ✅ JOIN BONUS (will be pending until sponsor + referred unlock)
+//       if (!refRow.joinBonusPaid) {
+//         const txn = await creditWallet({
+//           userId: sponsor.id,
+//           amount: JOIN_BONUS,
+//           reason: "REFERRAL_JOIN_BONUS",
+//           meta: {
+//             referredUserId: user.id,
+//             referredName: user.name,
+//             placedUnderUserId: placedParent.userId,
+//             placedPosition: pos,
+//           },
+//           t,
+//         });
+
+//         // mark paid only if actually credited
+//         if (txn?.meta?.pending !== true) {
+//           refRow.joinBonusPaid = true;
+//           await refRow.save({ transaction: t });
+//         }
+//       }
+
+//       // ✅ upline pair logic (PAIR_BONUS will also be pending until A+B+C unlock)
+//       await updateUplineCountsAndBonuses({
+//         startParentUserId: placedParent.userId,
+//         placedPosition: pos,
+//         newlyJoinedUserId: user.id,
+//         t,
+//       });
+//     }
+
+//     await t.commit();
+
+//     const token = signToken(user.id);
+//     return res.json({
+//       msg: "Registered",
+//       token,
+//       user: {
+//         id: user.id,
+//         name: user.name,
+//         role: user.role,
+//         email: user.email,
+//         phone: user.phone,
+//         referralCode: user.referralCode,
+//       },
+//     });
+//   } catch (err) {
+//     await t.rollback();
+//     return res.status(400).json({ msg: err.message });
+//   }
+// });
+
+// // ========================= LOGIN =========================
+// router.post("/login", async (req, res) => {
+//   try {
+//     const { email, password } = req.body;
+//     if (!email || !password)
+//       return res.status(400).json({ msg: "email,password required" });
+
+//     const user = await User.findOne({ where: { email } });
+//     if (!user) return res.status(400).json({ msg: "Invalid credentials" });
+
+//     const ok = await bcrypt.compare(password, user.password);
+//     if (!ok) return res.status(400).json({ msg: "Invalid credentials" });
+
+//     const token = signToken(user.id);
+//     return res.json({
+//       msg: "Logged in",
+//       token,
+//       user: {
+//         id: user.id,
+//         name: user.name,
+//         role: user.role,
+//         email: user.email,
+//         phone: user.phone,
+//         referralCode: user.referralCode,
+//       },
+//     });
+//   } catch (err) {
+//     return res.status(500).json({ msg: err.message });
+//   }
+// });
+
+// export default router;
+
+
+// ========================= routes/auth.js (FULL CODE) =========================// routes/auth.js (FULL CODE)  ✅ ROLE=ADMIN direct create ✅ JOIN+PAIR pending until 30k unlock ✅ PairPending + PairMatch
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -1458,22 +2478,22 @@ import PairMatch from "../models/PairMatch.js";
 
 const router = express.Router();
 
-console.log("AUTH FILE: JOIN BONUS AFTER 30K SPEND (pending txn until unlock) + PAIR ENABLED");
+console.log(
+  "AUTH FILE: JOIN + PAIR BONUS (pending until 30k unlock) + PAIR-PENDING + PAIR-MATCH + ADMIN DIRECT CREATE"
+);
 
-const MIN_SPEND_UNLOCK = 30000; // ✅ 30,000 spend after DELIVERED (you will update wallet.totalSpent in orders route)
+const MIN_SPEND_UNLOCK = 30000;
 const JOIN_BONUS = 5000;
 const PAIR_BONUS = 3000;
 
-const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "1d" });
+const signToken = (id) =>
+  jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "1d" });
 
 const generateReferralCode = () =>
   "R" + Math.random().toString(36).substring(2, 8).toUpperCase();
 
 // ========================= WALLET CREDIT (returns txn) =========================
-// ✅ JOIN BONUS rule:
-// - sponsor wallet must be unlocked (totalSpent >= 30000)
-// - referred user wallet must be unlocked (totalSpent >= 30000)
-// If not unlocked -> create CREDIT txn as pending (balance NOT added)
+// ✅ JOIN + PAIR both pending rules
 async function creditWallet({ userId, amount, reason, meta, t }) {
   const wallet = await Wallet.findOne({
     where: { userId },
@@ -1482,13 +2502,17 @@ async function creditWallet({ userId, amount, reason, meta, t }) {
   });
   if (!wallet) throw new Error("Wallet not found");
 
-  // ✅ normalize
-  const sponsorUnlocked =
-    !!wallet.isUnlocked && Number(wallet.totalSpent || 0) >= Number(MIN_SPEND_UNLOCK);
+  const minSpend = MIN_SPEND_UNLOCK;
+
+  const isUnlocked = (w) =>
+    !!w?.isUnlocked && Number(w?.totalSpent || 0) >= Number(minSpend);
+
+  const receiverUnlocked = isUnlocked(wallet);
 
   let canCredit = true;
   let pendingReason = null;
 
+  // ✅ RULE 1: JOIN BONUS -> sponsor + referred both unlocked
   if (reason === "REFERRAL_JOIN_BONUS") {
     const referredUserId = meta?.referredUserId;
 
@@ -1502,21 +2526,66 @@ async function creditWallet({ userId, amount, reason, meta, t }) {
         lock: t.LOCK.UPDATE,
       });
 
-      const referredUnlocked =
-        !!referredWallet?.isUnlocked &&
-        Number(referredWallet?.totalSpent || 0) >= Number(MIN_SPEND_UNLOCK);
-
-      if (!sponsorUnlocked) {
+      if (!receiverUnlocked) {
         canCredit = false;
         pendingReason = "SPONSOR_NOT_UNLOCKED";
-      } else if (!referredUnlocked) {
+      } else if (!isUnlocked(referredWallet)) {
         canCredit = false;
         pendingReason = "REFERRED_NOT_UNLOCKED";
       }
     }
   }
 
-  // ✅ not eligible now -> create pending txn only (no balance add)
+  // ✅ RULE 2: PAIR BONUS -> upline + left + right all unlocked
+  if (reason === "PAIR_BONUS") {
+    // If multiple pairs credited in one txn, validate all pairs.
+    const pairs =
+      Array.isArray(meta?.pairs) && meta.pairs.length
+        ? meta.pairs
+        : [{ leftUserId: meta?.leftUserId, rightUserId: meta?.rightUserId }];
+
+    if (!receiverUnlocked) {
+      canCredit = false;
+      pendingReason = "UPLINE_NOT_UNLOCKED";
+    } else {
+      for (const p of pairs) {
+        const leftUserId = p?.leftUserId;
+        const rightUserId = p?.rightUserId;
+
+        if (!leftUserId || !rightUserId) {
+          canCredit = false;
+          pendingReason = "MISSING_LEFT_RIGHT_IDS";
+          break;
+        }
+
+        const [leftW, rightW] = await Promise.all([
+          Wallet.findOne({
+            where: { userId: leftUserId },
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+          }),
+          Wallet.findOne({
+            where: { userId: rightUserId },
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+          }),
+        ]);
+
+        if (!isUnlocked(leftW)) {
+          canCredit = false;
+          pendingReason = "LEFT_NOT_UNLOCKED";
+          break;
+        }
+        if (!isUnlocked(rightW)) {
+          canCredit = false;
+          pendingReason = "RIGHT_NOT_UNLOCKED";
+          break;
+        }
+      }
+    }
+  }
+
+  // ✅ If not eligible -> create pending txn only (no balance add)
   if (!canCredit) {
     const txn = await WalletTransaction.create(
       {
@@ -1528,7 +2597,7 @@ async function creditWallet({ userId, amount, reason, meta, t }) {
           ...(meta || {}),
           pending: true,
           pendingReason,
-          minSpendRequired: MIN_SPEND_UNLOCK,
+          minSpendRequired: minSpend,
           createdButNotCredited: true,
         },
       },
@@ -1537,12 +2606,18 @@ async function creditWallet({ userId, amount, reason, meta, t }) {
     return txn;
   }
 
-  // ✅ eligible -> add to balance + create txn
+  // ✅ Eligible -> credit wallet + create txn
   wallet.balance = Number(wallet.balance || 0) + Number(amount || 0);
   await wallet.save({ transaction: t });
 
   const txn = await WalletTransaction.create(
-    { walletId: wallet.id, type: "CREDIT", amount, reason, meta: meta || null },
+    {
+      walletId: wallet.id,
+      type: "CREDIT",
+      amount,
+      reason,
+      meta: meta || null,
+    },
     { transaction: t }
   );
 
@@ -1558,7 +2633,13 @@ async function ensureNode(userId, t) {
   });
   if (!node) {
     node = await BinaryNode.create(
-      { userId, parentId: null, position: null, leftChildId: null, rightChildId: null },
+      {
+        userId,
+        parentId: null,
+        position: null,
+        leftChildId: null,
+        rightChildId: null,
+      },
       { transaction: t }
     );
   }
@@ -1577,6 +2658,7 @@ async function findPlacementParent({ sponsorUserId, position, t }) {
   while (true) {
     if (position === "LEFT") {
       if (!current.leftChildId) return current;
+
       current = await BinaryNode.findOne({
         where: { userId: current.leftChildId },
         transaction: t,
@@ -1584,18 +2666,25 @@ async function findPlacementParent({ sponsorUserId, position, t }) {
       });
     } else {
       if (!current.rightChildId) return current;
+
       current = await BinaryNode.findOne({
         where: { userId: current.rightChildId },
         transaction: t,
         lock: t.LOCK.UPDATE,
       });
     }
+
     if (!current) throw new Error("Broken tree: missing node while placing");
   }
 }
 
 // ========================= PAIRING (PairPending + PairMatch) =========================
-async function updateUplineCountsAndBonuses({ startParentUserId, placedPosition, newlyJoinedUserId, t }) {
+async function updateUplineCountsAndBonuses({
+  startParentUserId,
+  placedPosition,
+  newlyJoinedUserId,
+  t,
+}) {
   let node = await BinaryNode.findOne({
     where: { userId: startParentUserId },
     transaction: t,
@@ -1611,16 +2700,22 @@ async function updateUplineCountsAndBonuses({ startParentUserId, placedPosition,
     if (!uplineUser) break;
 
     // 1) increment counts
-    if (pos === "LEFT") uplineUser.leftCount = Number(uplineUser.leftCount || 0) + 1;
+    if (pos === "LEFT")
+      uplineUser.leftCount = Number(uplineUser.leftCount || 0) + 1;
     else uplineUser.rightCount = Number(uplineUser.rightCount || 0) + 1;
 
     // 2) store pending entry (exact downline id)
     await PairPending.create(
-      { uplineUserId: uplineUser.id, side: pos, downlineUserId: newlyJoinedUserId, isUsed: false },
+      {
+        uplineUserId: uplineUser.id,
+        side: pos,
+        downlineUserId: newlyJoinedUserId,
+        isUsed: false,
+      },
       { transaction: t }
     );
 
-    // 3) FIFO unused left & right
+    // 3) find FIFO unused left & right
     const leftUnused = await PairPending.findAll({
       where: { uplineUserId: uplineUser.id, side: "LEFT", isUsed: false },
       order: [["id", "ASC"]],
@@ -1638,27 +2733,43 @@ async function updateUplineCountsAndBonuses({ startParentUserId, placedPosition,
     const canMake = Math.min(leftUnused.length, rightUnused.length);
 
     if (canMake > 0) {
+      // Build pairs FIFO
       const pairs = [];
-      for (let i = 0; i < canMake; i++) pairs.push({ leftP: leftUnused[i], rightP: rightUnused[i] });
+      for (let i = 0; i < canMake; i++) {
+        pairs.push({ leftP: leftUnused[i], rightP: rightUnused[i] });
+      }
 
+      // fetch names for meta
       const leftIds = pairs.map((p) => p.leftP.downlineUserId);
       const rightIds = pairs.map((p) => p.rightP.downlineUserId);
 
       const [leftUsers, rightUsers] = await Promise.all([
-        User.findAll({ where: { id: leftIds }, attributes: ["id", "name"], transaction: t }),
-        User.findAll({ where: { id: rightIds }, attributes: ["id", "name"], transaction: t }),
+        User.findAll({
+          where: { id: leftIds },
+          attributes: ["id", "name"],
+          transaction: t,
+        }),
+        User.findAll({
+          where: { id: rightIds },
+          attributes: ["id", "name"],
+          transaction: t,
+        }),
       ]);
 
       const leftMap = new Map(leftUsers.map((u) => [u.id, u]));
       const rightMap = new Map(rightUsers.map((u) => [u.id, u]));
 
+      // create PairMatch rows + mark pendings used
       const createdMatches = [];
       for (const p of pairs) {
+        const leftDownId = p.leftP.downlineUserId;
+        const rightDownId = p.rightP.downlineUserId;
+
         const m = await PairMatch.create(
           {
             uplineUserId: uplineUser.id,
-            leftUserId: p.leftP.downlineUserId,
-            rightUserId: p.rightP.downlineUserId,
+            leftUserId: leftDownId,
+            rightUserId: rightDownId,
             bonusEach: PAIR_BONUS,
             amount: PAIR_BONUS,
             matchedAt: new Date(),
@@ -1666,14 +2777,20 @@ async function updateUplineCountsAndBonuses({ startParentUserId, placedPosition,
           { transaction: t }
         );
 
-        await p.leftP.update({ isUsed: true, usedInPairMatchId: m.id }, { transaction: t });
-        await p.rightP.update({ isUsed: true, usedInPairMatchId: m.id }, { transaction: t });
+        await p.leftP.update(
+          { isUsed: true, usedInPairMatchId: m.id },
+          { transaction: t }
+        );
+        await p.rightP.update(
+          { isUsed: true, usedInPairMatchId: m.id },
+          { transaction: t }
+        );
 
         createdMatches.push(m);
       }
 
-      // NOTE: Pair bonus still credits immediately here.
-      // Later you can apply same "30k unlock" rule to PAIR_BONUS too.
+      // ✅ credit wallet (one txn for multiple pairs)
+      // this respects 30k rule for upline + left + right using creditWallet()
       const txn = await creditWallet({
         userId: uplineUser.id,
         amount: canMake * PAIR_BONUS,
@@ -1681,7 +2798,10 @@ async function updateUplineCountsAndBonuses({ startParentUserId, placedPosition,
         meta: {
           each: PAIR_BONUS,
           newPairs: canMake,
-          countsAfter: { left: Number(uplineUser.leftCount || 0), right: Number(uplineUser.rightCount || 0) },
+          countsAfter: {
+            left: Number(uplineUser.leftCount || 0),
+            right: Number(uplineUser.rightCount || 0),
+          },
           triggeredSide: placedPosition,
           triggeredByUserId: startParentUserId,
           pairs: createdMatches.map((m) => ({
@@ -1696,10 +2816,12 @@ async function updateUplineCountsAndBonuses({ startParentUserId, placedPosition,
         t,
       });
 
+      // link PairMatch -> walletTransactionId (even if pending, we keep the link)
       for (const m of createdMatches) {
         await m.update({ walletTransactionId: txn.id }, { transaction: t });
       }
 
+      // paidPairs = pairs created/processed (not necessarily credited now)
       uplineUser.paidPairs = Number(uplineUser.paidPairs || 0) + canMake;
     }
 
@@ -1723,41 +2845,78 @@ async function updateUplineCountsAndBonuses({ startParentUserId, placedPosition,
 
 // ========================= REGISTER =========================
 // POST /api/auth/register
-// Body: { name,email,phone,password, referralCode?: "<link-code>" }
+// Body: { name,email,phone,password, referralCode?: "<link-code>", role?: "USER"|"ADMIN" }
 router.post("/register", async (req, res) => {
   const { name, email, phone, password } = req.body;
   const referralCode = req.body.referralCode;
 
   const t = await sequelize.transaction();
   try {
-    if (!name || !email || !phone || !password) throw new Error("name,email,phone,password required");
+    if (!name || !email || !phone || !password) {
+      throw new Error("name,email,phone,password required");
+    }
 
+    // prevent duplicates
     const existsEmail = await User.findOne({ where: { email }, transaction: t });
     if (existsEmail) throw new Error("Email already exists");
 
     const existsPhone = await User.findOne({ where: { phone }, transaction: t });
     if (existsPhone) throw new Error("Phone already exists");
 
-    // unique user referralCode
+    // unique referralCode
     let myCode = generateReferralCode();
-    while (await User.findOne({ where: { referralCode: myCode }, transaction: t })) {
+    while (
+      await User.findOne({ where: { referralCode: myCode }, transaction: t })
+    ) {
       myCode = generateReferralCode();
     }
 
-    // create user
-    const user = await User.create({ name, email, phone, password, referralCode: myCode }, { transaction: t });
+    // ✅ ROLE LOGIC (DIRECT):
+    const requestedRole = String(req.body.role || "USER").toUpperCase();
+    const roleToSave = requestedRole === "ADMIN" ? "ADMIN" : "USER";
 
-    // create wallet (must have totalSpent + isUnlocked fields in model)
+    // create user
+    const user = await User.create(
+      { name, email, phone, password, referralCode: myCode, role: roleToSave },
+      { transaction: t }
+    );
+
+    // create wallet
     await Wallet.create(
       { userId: user.id, balance: 0, totalSpent: 0, isUnlocked: false },
       { transaction: t }
     );
 
-    // create binary node for user
+    // create binary node
     await BinaryNode.create(
-      { userId: user.id, parentId: null, position: null, leftChildId: null, rightChildId: null },
+      {
+        userId: user.id,
+        parentId: null,
+        position: null,
+        leftChildId: null,
+        rightChildId: null,
+      },
       { transaction: t }
     );
+
+    // ✅ ADMIN register: no referral logic needed (optional)
+    // If you still want ADMIN to join in tree using referralCode, remove this if-block.
+    if (roleToSave === "ADMIN") {
+      await t.commit();
+      const token = signToken(user.id);
+      return res.json({
+        msg: "Registered",
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          role: user.role,
+          email: user.email,
+          phone: user.phone,
+          referralCode: user.referralCode,
+        },
+      });
+    }
 
     // ========================= APPLY REFERRAL (SPILLOVER) =========================
     if (referralCode) {
@@ -1768,29 +2927,38 @@ router.post("/register", async (req, res) => {
       });
       if (!link) throw new Error("Invalid referral code");
 
-      const sponsor = await User.findByPk(link.sponsorId, { transaction: t, lock: t.LOCK.UPDATE });
+      const sponsor = await User.findByPk(link.sponsorId, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
       if (!sponsor) throw new Error("Sponsor not found");
 
       const pos = String(link.position || "").toUpperCase();
-      if (!["LEFT", "RIGHT"].includes(pos)) throw new Error("Invalid referral position");
+      if (!["LEFT", "RIGHT"].includes(pos))
+        throw new Error("Invalid referral position");
 
       // direct sponsor
       user.sponsorId = sponsor.id;
       await user.save({ transaction: t });
 
-      // ensure sponsor node exists
       await ensureNode(sponsor.id, t);
 
-      // spillover placement down the chosen side
-      const placedParent = await findPlacementParent({ sponsorUserId: sponsor.id, position: pos, t });
+      const placedParent = await findPlacementParent({
+        sponsorUserId: sponsor.id,
+        position: pos,
+        t,
+      });
 
-      // audit referral row
       const refRow = await Referral.create(
-        { sponsorId: sponsor.id, referredUserId: user.id, position: pos, joinBonusPaid: false },
+        {
+          sponsorId: sponsor.id,
+          referredUserId: user.id,
+          position: pos,
+          joinBonusPaid: false,
+        },
         { transaction: t }
       );
 
-      // attach my node under placement parent
       const myNode = await BinaryNode.findOne({
         where: { userId: user.id },
         transaction: t,
@@ -1801,12 +2969,11 @@ router.post("/register", async (req, res) => {
       myNode.position = pos;
       await myNode.save({ transaction: t });
 
-      // set placement parent's child pointer
       if (pos === "LEFT") placedParent.leftChildId = user.id;
       else placedParent.rightChildId = user.id;
       await placedParent.save({ transaction: t });
 
-      // ✅ JOIN BONUS CALL SAME — BUT creditWallet will hold it until 30k unlock
+      // ✅ JOIN BONUS (pending until sponsor + referred unlock)
       if (!refRow.joinBonusPaid) {
         const txn = await creditWallet({
           userId: sponsor.id,
@@ -1821,14 +2988,13 @@ router.post("/register", async (req, res) => {
           t,
         });
 
-        // ✅ mark as paid ONLY if it was actually credited (not pending)
         if (txn?.meta?.pending !== true) {
           refRow.joinBonusPaid = true;
           await refRow.save({ transaction: t });
         }
       }
 
-      // ✅ upline pair logic (still immediate; later we can apply 30k rule to pairs too)
+      // ✅ PAIR BONUS (pending until upline + left + right unlock)
       await updateUplineCountsAndBonuses({
         startParentUserId: placedParent.userId,
         placedPosition: pos,
@@ -1862,7 +3028,8 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ msg: "email,password required" });
+    if (!email || !password)
+      return res.status(400).json({ msg: "email,password required" });
 
     const user = await User.findOne({ where: { email } });
     if (!user) return res.status(400).json({ msg: "Invalid credentials" });
