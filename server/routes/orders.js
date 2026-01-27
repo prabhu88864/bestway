@@ -19,8 +19,148 @@ import Address from "../models/Address.js";
 import isAdmin from "../middleware/isAdmin.js";
 import User from "../models/User.js";
 
+import { sequelize } from "../config/db.js";
+import AppSetting from "../models/AppSetting.js";
+import Referral from "../models/Referral.js";
+import { getSettingNumber } from "../utils/appSettings.js";
+
+
 
 const router = express.Router();
+
+async function addSpendAndUnlockIfNeeded({ userId, amount, t }) {
+  const wallet = await Wallet.findOne({
+    where: { userId },
+    transaction: t,
+    lock: t.LOCK.UPDATE,
+  });
+  if (!wallet) throw new Error("Wallet not found");
+
+  const minSpend = await getSettingNumber("MIN_SPEND_UNLOCK", t);
+  const wasUnlocked = !!wallet.isUnlocked;
+
+  wallet.totalSpent = Number(wallet.totalSpent || 0) + Number(amount || 0);
+  if (!wallet.isUnlocked && Number(wallet.totalSpent) >= minSpend) {
+    wallet.isUnlocked = true;
+  }
+
+  await wallet.save({ transaction: t });
+  return { wallet, wasUnlocked, minSpend };
+}
+
+// ✅ pay join bonus only if BOTH unlocked
+async function tryPayJoinBonus({ referredUserId, t }) {
+  const ref = await Referral.findOne({
+    where: { referredUserId },
+    transaction: t,
+    lock: t.LOCK.UPDATE,
+  });
+  if (!ref) return { paid: false, reason: "NO_REFERRAL_ROW" };
+  if (ref.joinBonusPaid) return { paid: false, reason: "ALREADY_PAID" };
+
+  const sponsorId = ref.sponsorId;
+  if (!sponsorId) return { paid: false, reason: "NO_SPONSOR" };
+
+  const [referredWallet, sponsorWallet] = await Promise.all([
+    Wallet.findOne({ where: { userId: referredUserId }, transaction: t, lock: t.LOCK.UPDATE }),
+    Wallet.findOne({ where: { userId: sponsorId }, transaction: t, lock: t.LOCK.UPDATE }),
+  ]);
+
+  if (!referredWallet?.isUnlocked) return { paid: false, reason: "REFERRED_NOT_UNLOCKED" };
+  if (!sponsorWallet?.isUnlocked) return { paid: false, reason: "SPONSOR_NOT_UNLOCKED" };
+
+  const JOIN_BONUS = await getSettingNumber("JOIN_BONUS", t);
+
+  const referredUser = await User.findByPk(referredUserId, {
+    transaction: t,
+    attributes: ["id", "name"],
+  });
+
+  sponsorWallet.balance = Number(sponsorWallet.balance || 0) + Number(JOIN_BONUS);
+  await sponsorWallet.save({ transaction: t });
+
+  const txn = await WalletTransaction.create(
+    {
+      walletId: sponsorWallet.id,
+      type: "CREDIT",
+      amount: JOIN_BONUS,
+      reason: "REFERRAL_JOIN_BONUS",
+      meta: { referredUserId, referredName: referredUser?.name || null },
+    },
+    { transaction: t }
+  );
+
+  ref.joinBonusPaid = true;
+  await ref.save({ transaction: t });
+
+  return { paid: true, sponsorId, txnId: txn.id, joinBonus: JOIN_BONUS };
+}
+
+// ✅ when sponsor unlocks -> pay all pending referrals that are already unlocked
+async function tryPayPendingJoinBonusesForSponsor({ sponsorId, t }) {
+  const sponsorWallet = await Wallet.findOne({
+    where: { userId: sponsorId },
+    transaction: t,
+    lock: t.LOCK.UPDATE,
+  });
+  if (!sponsorWallet?.isUnlocked) return { paidCount: 0, reason: "SPONSOR_NOT_UNLOCKED" };
+
+  const pending = await Referral.findAll({
+    where: { sponsorId, joinBonusPaid: false },
+    transaction: t,
+    lock: t.LOCK.UPDATE,
+  });
+  if (!pending.length) return { paidCount: 0 };
+
+  const JOIN_BONUS = await getSettingNumber("JOIN_BONUS", t);
+
+  const referredIds = pending.map((r) => r.referredUserId);
+
+  const referredWallets = await Wallet.findAll({
+    where: { userId: referredIds },
+    transaction: t,
+  });
+  const wMap = new Map(referredWallets.map((w) => [w.userId, w]));
+
+  const referredUsers = await User.findAll({
+    where: { id: referredIds },
+    attributes: ["id", "name"],
+    transaction: t,
+  });
+  const uMap = new Map(referredUsers.map((u) => [u.id, u]));
+
+  let paidCount = 0;
+
+  for (const ref of pending) {
+    const rw = wMap.get(ref.referredUserId);
+    if (!rw?.isUnlocked) continue;
+
+    sponsorWallet.balance = Number(sponsorWallet.balance || 0) + Number(JOIN_BONUS);
+    await sponsorWallet.save({ transaction: t });
+
+    await WalletTransaction.create(
+      {
+        walletId: sponsorWallet.id,
+        type: "CREDIT",
+        amount: JOIN_BONUS,
+        reason: "REFERRAL_JOIN_BONUS",
+        meta: {
+          referredUserId: ref.referredUserId,
+          referredName: uMap.get(ref.referredUserId)?.name || null,
+        },
+      },
+      { transaction: t }
+    );
+
+    ref.joinBonusPaid = true;
+    await ref.save({ transaction: t });
+
+    paidCount += 1;
+  }
+
+  return { paidCount };
+}
+
 
 /* ================= PLACE ORDER (from cart) =================
 POST /api/orders
@@ -159,47 +299,128 @@ router.post("/", auth, async (req, res) => {
 // ================= ADMIN: UPDATE ORDER STATUS =================
 // PATCH /api/orders/admin/:id/status
 // Body: { status: "PENDING"|"PAID"|"CANCELLED"|"DELIVERED" }
+// router.patch("/admin/:id/status", auth, isAdmin, async (req, res) => {
+//   try {
+//     const { status } = req.body;
+//     const allowed = ["PENDING", "PAID", "CANCELLED", "DELIVERED"];
+
+//     if (!status || !allowed.includes(String(status).toUpperCase())) {
+//       return res.status(400).json({ msg: "Invalid status" });
+//     }
+
+//     const order = await Order.findByPk(req.params.id);
+//     if (!order) return res.status(404).json({ msg: "Order not found" });
+
+//     const next = String(status).toUpperCase();
+
+//     // ✅ business rules
+//     // delivered only if paid (or COD can be delivered even if paymentStatus pending)
+//     if (next === "DELIVERED") {
+//       if (order.status === "CANCELLED") {
+//         return res.status(400).json({ msg: "Cancelled order cannot be delivered" });
+//       }
+//       // set deliveredOn automatically
+//       await order.update({ status: "DELIVERED", deliveredOn: new Date() });
+//     } else {
+//       // if switching away from DELIVERED, clear deliveredOn (optional)
+//       await order.update({
+//         status: next,
+//         deliveredOn: next === "DELIVERED" ? order.deliveredOn : null,
+//       });
+//     }
+
+//     return res.json({
+//       msg: "Status updated",
+//       orderId: order.id,
+//       status: order.status,
+//       deliveredOn: order.deliveredOn,
+//     });
+//   } catch (e) {
+//     console.error("PATCH /api/orders/admin/:id/status error:", e);
+//     res.status(500).json({ msg: "Failed to update status" });
+//   }
+// });
 router.patch("/admin/:id/status", auth, isAdmin, async (req, res) => {
+  const t = await sequelize.transaction();
   try {
     const { status } = req.body;
     const allowed = ["PENDING", "PAID", "CANCELLED", "DELIVERED"];
 
     if (!status || !allowed.includes(String(status).toUpperCase())) {
+      await t.rollback();
       return res.status(400).json({ msg: "Invalid status" });
     }
 
-    const order = await Order.findByPk(req.params.id);
-    if (!order) return res.status(404).json({ msg: "Order not found" });
+    const order = await Order.findByPk(req.params.id, {
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+    if (!order) {
+      await t.rollback();
+      return res.status(404).json({ msg: "Order not found" });
+    }
 
     const next = String(status).toUpperCase();
+    const wasDelivered = order.status === "DELIVERED";
 
-    // ✅ business rules
-    // delivered only if paid (or COD can be delivered even if paymentStatus pending)
     if (next === "DELIVERED") {
       if (order.status === "CANCELLED") {
+        await t.rollback();
         return res.status(400).json({ msg: "Cancelled order cannot be delivered" });
       }
-      // set deliveredOn automatically
-      await order.update({ status: "DELIVERED", deliveredOn: new Date() });
+      await order.update({ status: "DELIVERED", deliveredOn: new Date() }, { transaction: t });
     } else {
-      // if switching away from DELIVERED, clear deliveredOn (optional)
-      await order.update({
-        status: next,
-        deliveredOn: next === "DELIVERED" ? order.deliveredOn : null,
-      });
+      await order.update(
+        { status: next, deliveredOn: next === "DELIVERED" ? order.deliveredOn : null },
+        { transaction: t }
+      );
     }
+
+    let spendInfo = null;
+    let joinBonus = null;
+    let sponsorPending = null;
+
+    // ✅ only on first time DELIVERED
+    if (!wasDelivered && next === "DELIVERED") {
+      spendInfo = await addSpendAndUnlockIfNeeded({
+        userId: order.userId,
+        amount: order.totalAmount,
+        t,
+      });
+
+      // ✅ if this user newly unlocked now
+      if (!spendInfo.wasUnlocked && spendInfo.wallet.isUnlocked) {
+        // 1) user unlocked => try pay sponsor join bonus (if sponsor unlocked too)
+        joinBonus = await tryPayJoinBonus({ referredUserId: order.userId, t });
+
+        // 2) user unlocked => if user is sponsor for others, pay pending
+        sponsorPending = await tryPayPendingJoinBonusesForSponsor({
+          sponsorId: order.userId,
+          t,
+        });
+      }
+    }
+
+    await t.commit();
 
     return res.json({
       msg: "Status updated",
       orderId: order.id,
       status: order.status,
       deliveredOn: order.deliveredOn,
+      spendInfo: spendInfo
+        ? { totalSpent: spendInfo.wallet.totalSpent, isUnlocked: spendInfo.wallet.isUnlocked, minSpend: spendInfo.minSpend }
+        : null,
+      joinBonus,
+      sponsorPending,
     });
   } catch (e) {
+    await t.rollback();
     console.error("PATCH /api/orders/admin/:id/status error:", e);
-    res.status(500).json({ msg: "Failed to update status" });
+    return res.status(500).json({ msg: "Failed to update status", err: e.message });
   }
 });
+
 
 /* ================= ADMIN ORDERS =================
 GET /api/orders/admin?search=...

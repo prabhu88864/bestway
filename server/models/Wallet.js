@@ -11,6 +11,8 @@ const Wallet = sequelize.define(
       allowNull: false,
       defaultValue: 0,
     },
+        totalSpent: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0 },
+    isUnlocked: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   },
   { timestamps: true }
 );

@@ -4,8 +4,11 @@ import Wallet from "../models/Wallet.js";
 import WalletTransaction from "../models/WalletTransaction.js";
 import isAdmin from "../middleware/isAdmin.js";
 import User from "../models/User.js"; 
+import PairMatch from "../models/PairMatch.js";
+
 
 const router = express.Router();
+
 
 
 router.get("/admin", auth, isAdmin, async (req, res) => {
@@ -69,13 +72,37 @@ router.get("/admin", auth, isAdmin, async (req, res) => {
 GET /api/wallet
 */
 router.get("/", auth, async (req, res) => {
-  let wallet = await Wallet.findOne({ where: { userId: req.user.id } });
+  try {
+    const wallet = await Wallet.findOne({ where: { userId: req.user.id } });
+    if (!wallet) return res.status(404).json({ msg: "Wallet not found" });
 
-  if (!wallet) {
-    wallet = await Wallet.create({ userId: req.user.id });
+    // ✅ calculate locked amount from pending CREDIT txns
+    const txns = await WalletTransaction.findAll({
+      where: { walletId: wallet.id, type: "CREDIT" },
+      order: [["id", "DESC"]],
+      limit: 2000, // adjust
+    });
+
+    const lockedBalance = txns
+      .filter((t) => t?.meta?.pending === true)
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+    const availableBalance = Number(wallet.balance || 0);
+
+    return res.json({
+      id: wallet.id,
+      userId: wallet.userId,
+      balance: availableBalance,            // ✅ usable
+      lockedBalance,                        // ✅ pending
+      totalBalance: availableBalance + lockedBalance, // ✅ show only
+      totalSpent: Number(wallet.totalSpent || 0),
+      isUnlocked: !!wallet.isUnlocked,
+      createdAt: wallet.createdAt,
+      updatedAt: wallet.updatedAt,
+    });
+  } catch (err) {
+    return res.status(500).json({ msg: err.message });
   }
-
-  res.json(wallet);
 });
 
 /* ================= WALLET TOPUP =================

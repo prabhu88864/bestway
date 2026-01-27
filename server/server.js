@@ -32,6 +32,11 @@ import ReferralEdge from "./models/ReferralEdge.js";
 import referralTreeRoutes from "./routes/referralTree.js";
 import settingsRoutes from "./routes/settings.js";
 import AppSetting from "./models/AppSetting.js";
+import PairMatch from "./models/PairMatch.js";
+import "./models/PairPending.js";
+import "./models/PairMatch.js";
+
+import pairsRoutes from "./routes/pairs.js";
 
 
 
@@ -63,9 +68,10 @@ app.use("/api/razorpay", razorpayRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/referrals", referralRoutes);
 app.use("/api/binary", binaryRoutes);
-app.use("/api/referrals-tree", referralTreeRoutes);
+// app.use("/api/referrals-tree", referralTreeRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/binary", referralTreeRoutes);
+app.use("/api/pairs", pairsRoutes);
 
 
 /* relations */
@@ -119,6 +125,8 @@ Referral.belongsTo(User, { foreignKey: "referredUserId", as: "referredUser" });
 
 ReferralEdge.belongsTo(User, { foreignKey: "sponsorId", as: "sponsor" });
 ReferralEdge.belongsTo(User, { foreignKey: "childId", as: "child" });
+
+
 
 
 app.listen(3000, () => console.log('Server running on 3000'))
