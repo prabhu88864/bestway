@@ -2585,43 +2585,53 @@ async function creditWallet({ userId, amount, reason, meta, t }) {
     }
   }
 
-  // ✅ If not eligible -> create pending txn only (no balance add)
-  if (!canCredit) {
-    const txn = await WalletTransaction.create(
-      {
-        walletId: wallet.id,
-        type: "CREDIT",
-        amount,
-        reason,
-        meta: {
-          ...(meta || {}),
-          pending: true,
-          pendingReason,
-          minSpendRequired: minSpend,
-          createdButNotCredited: true,
-        },
-      },
-      { transaction: t }
-    );
-    return txn;
-  }
-
-  // ✅ Eligible -> credit wallet + create txn
-  wallet.balance = Number(wallet.balance || 0) + Number(amount || 0);
-  await wallet.save({ transaction: t });
-
+// ✅ If not eligible -> create pending txn + add to lockedBalance
+if (!canCredit) {
   const txn = await WalletTransaction.create(
     {
       walletId: wallet.id,
       type: "CREDIT",
       amount,
       reason,
-      meta: meta || null,
+      meta: {
+        ...(meta || {}),
+        pending: true,
+        pendingReason,
+        minSpendRequired: minSpend,
+        createdButNotCredited: true,
+      },
     },
     { transaction: t }
   );
 
+  wallet.lockedBalance = Number(wallet.lockedBalance || 0) + Number(amount || 0);
+  wallet.totalBalance =
+    Number(wallet.balance || 0) + Number(wallet.lockedBalance || 0);
+
+  await wallet.save({ transaction: t });
   return txn;
+}
+
+// ✅ Eligible -> credit wallet balance
+wallet.balance = Number(wallet.balance || 0) + Number(amount || 0);
+wallet.totalBalance =
+  Number(wallet.balance || 0) + Number(wallet.lockedBalance || 0);
+
+await wallet.save({ transaction: t });
+
+const txn = await WalletTransaction.create(
+  {
+    walletId: wallet.id,
+    type: "CREDIT",
+    amount,
+    reason,
+    meta: meta || null,
+  },
+  { transaction: t }
+);
+
+return txn;
+
 }
 
 // ========================= BINARY NODE HELPERS =========================
@@ -2882,10 +2892,18 @@ router.post("/register", async (req, res) => {
     );
 
     // create wallet
-    await Wallet.create(
-      { userId: user.id, balance: 0, totalSpent: 0, isUnlocked: false },
-      { transaction: t }
-    );
+   await Wallet.create(
+  {
+    userId: user.id,
+    balance: 0,
+    lockedBalance: 0,
+    totalBalance: 0,
+    totalSpent: 0,
+    isUnlocked: false,
+  },
+  { transaction: t }
+);
+
 
     // create binary node
     await BinaryNode.create(
@@ -3056,3 +3074,5 @@ router.post("/login", async (req, res) => {
 });
 
 export default router;
+
+

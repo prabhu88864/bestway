@@ -28,6 +28,59 @@ import { getSettingNumber } from "../utils/appSettings.js";
 
 const router = express.Router();
 
+// async function tryReleasePendingPairBonuses(t) {
+//   const minSpend = 30000;
+
+//   const isUnlockedUser = async (userId) => {
+//     const w = await Wallet.findOne({ where: { userId }, transaction: t });
+//     return !!w?.isUnlocked && Number(w?.totalSpent || 0) >= minSpend;
+//   };
+
+//   // find pending PAIR_BONUS transactions
+//   const pendingPairTxns = await WalletTransaction.findAll({
+//     where: {
+//       type: "CREDIT",
+//       reason: "PAIR_BONUS",
+//     },
+//     transaction: t,
+//     lock: t.LOCK.UPDATE,
+//   });
+
+//   for (const txn of pendingPairTxns) {
+//     if (txn?.meta?.pending !== true) continue;
+
+//     // receiver (upline) is wallet owner
+//     const wallet = await Wallet.findByPk(txn.walletId, { transaction: t });
+//     if (!wallet) continue;
+
+//     const receiverId = wallet.userId;
+
+//     // try to get left/right from meta
+//     const leftUserId =
+//       txn.meta?.pairs?.[0]?.leftUserId || txn.meta?.leftUserId;
+//     const rightUserId =
+//       txn.meta?.pairs?.[0]?.rightUserId || txn.meta?.rightUserId;
+
+//     if (!leftUserId || !rightUserId) continue;
+
+//     const [uOk, lOk, rOk] = await Promise.all([
+//       isUnlockedUser(receiverId),
+//       isUnlockedUser(leftUserId),
+//       isUnlockedUser(rightUserId),
+//     ]);
+
+//     if (uOk && lOk && rOk) {
+//       // ✅ release now
+//       wallet.balance = Number(wallet.balance || 0) + Number(txn.amount || 0);
+//       await wallet.save({ transaction: t });
+
+//       txn.meta.pending = false;
+//       txn.meta.releasedAt = new Date();
+//       txn.meta.pendingReason = null;
+//       await txn.save({ transaction: t });
+//     }
+//   }
+// }
 async function tryReleasePendingPairBonuses(t) {
   const minSpend = 30000;
 
@@ -36,31 +89,27 @@ async function tryReleasePendingPairBonuses(t) {
     return !!w?.isUnlocked && Number(w?.totalSpent || 0) >= minSpend;
   };
 
-  // find pending PAIR_BONUS transactions
   const pendingPairTxns = await WalletTransaction.findAll({
-    where: {
-      type: "CREDIT",
-      reason: "PAIR_BONUS",
-    },
+    where: { type: "CREDIT", reason: "PAIR_BONUS" },
     transaction: t,
     lock: t.LOCK.UPDATE,
   });
 
   for (const txn of pendingPairTxns) {
-    if (txn?.meta?.pending !== true) continue;
+    const meta = txn.meta || {};
+    if (meta.pending !== true) continue;
 
-    // receiver (upline) is wallet owner
-    const wallet = await Wallet.findByPk(txn.walletId, { transaction: t });
+    // Lock wallet row (important)
+    const wallet = await Wallet.findByPk(txn.walletId, {
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
     if (!wallet) continue;
 
     const receiverId = wallet.userId;
 
-    // try to get left/right from meta
-    const leftUserId =
-      txn.meta?.pairs?.[0]?.leftUserId || txn.meta?.leftUserId;
-    const rightUserId =
-      txn.meta?.pairs?.[0]?.rightUserId || txn.meta?.rightUserId;
-
+    const leftUserId = meta?.pairs?.[0]?.leftUserId || meta?.leftUserId;
+    const rightUserId = meta?.pairs?.[0]?.rightUserId || meta?.rightUserId;
     if (!leftUserId || !rightUserId) continue;
 
     const [uOk, lOk, rOk] = await Promise.all([
@@ -69,18 +118,28 @@ async function tryReleasePendingPairBonuses(t) {
       isUnlockedUser(rightUserId),
     ]);
 
-    if (uOk && lOk && rOk) {
-      // ✅ release now
-      wallet.balance = Number(wallet.balance || 0) + Number(txn.amount || 0);
-      await wallet.save({ transaction: t });
+    if (!uOk || !lOk || !rOk) continue;
 
-      txn.meta.pending = false;
-      txn.meta.releasedAt = new Date();
-      txn.meta.pendingReason = null;
-      await txn.save({ transaction: t });
-    }
+    const amt = Number(txn.amount || 0);
+
+    // ✅ move locked -> balance
+    wallet.lockedBalance = Math.max(0, Number(wallet.lockedBalance || 0) - amt);
+    wallet.balance = Number(wallet.balance || 0) + amt;
+    wallet.totalBalance = Number(wallet.balance || 0) + Number(wallet.lockedBalance || 0);
+
+    await wallet.save({ transaction: t });
+
+    // ✅ mark txn released
+    txn.meta = {
+      ...meta,
+      pending: false,
+      releasedAt: new Date().toISOString(),
+      pendingReason: null,
+    };
+    await txn.save({ transaction: t });
   }
 }
+
 
 
 async function addSpendAndUnlockIfNeeded({ userId, amount, t }) {
@@ -104,52 +163,109 @@ async function addSpendAndUnlockIfNeeded({ userId, amount, t }) {
 }
 
 // ✅ pay join bonus only if BOTH unlocked
-async function tryPayJoinBonus({ referredUserId, t }) {
-  const ref = await Referral.findOne({
-    where: { referredUserId },
+// async function tryPayJoinBonus({ referredUserId, t }) {
+//   const ref = await Referral.findOne({
+//     where: { referredUserId },
+//     transaction: t,
+//     lock: t.LOCK.UPDATE,
+//   });
+//   if (!ref) return { paid: false, reason: "NO_REFERRAL_ROW" };
+//   if (ref.joinBonusPaid) return { paid: false, reason: "ALREADY_PAID" };
+
+//   const sponsorId = ref.sponsorId;
+//   if (!sponsorId) return { paid: false, reason: "NO_SPONSOR" };
+
+//   const [referredWallet, sponsorWallet] = await Promise.all([
+//     Wallet.findOne({ where: { userId: referredUserId }, transaction: t, lock: t.LOCK.UPDATE }),
+//     Wallet.findOne({ where: { userId: sponsorId }, transaction: t, lock: t.LOCK.UPDATE }),
+//   ]);
+
+//   if (!referredWallet?.isUnlocked) return { paid: false, reason: "REFERRED_NOT_UNLOCKED" };
+//   if (!sponsorWallet?.isUnlocked) return { paid: false, reason: "SPONSOR_NOT_UNLOCKED" };
+
+//   const JOIN_BONUS = await getSettingNumber("JOIN_BONUS", t);
+
+//   const referredUser = await User.findByPk(referredUserId, {
+//     transaction: t,
+//     attributes: ["id", "name"],
+//   });
+
+//   sponsorWallet.balance = Number(sponsorWallet.balance || 0) + Number(JOIN_BONUS);
+//   await sponsorWallet.save({ transaction: t });
+
+//   const txn = await WalletTransaction.create(
+//     {
+//       walletId: sponsorWallet.id,
+//       type: "CREDIT",
+//       amount: JOIN_BONUS,
+//       reason: "REFERRAL_JOIN_BONUS",
+//       meta: { referredUserId, referredName: referredUser?.name || null },
+//     },
+//     { transaction: t }
+//   );
+
+//   ref.joinBonusPaid = true;
+//   await ref.save({ transaction: t });
+
+//   return { paid: true, sponsorId, txnId: txn.id, joinBonus: JOIN_BONUS };
+// }
+async function tryReleasePendingJoinBonusesForReferred({ referredUserId, t }) {
+  const minSpend = 30000;
+
+  const isUnlockedUser = async (userId) => {
+    const w = await Wallet.findOne({ where: { userId }, transaction: t });
+    return !!w?.isUnlocked && Number(w?.totalSpent || 0) >= minSpend;
+  };
+
+  // find all pending join bonus txns that belong to sponsor wallets
+  const pendingJoinTxns = await WalletTransaction.findAll({
+    where: { type: "CREDIT", reason: "REFERRAL_JOIN_BONUS" },
     transaction: t,
     lock: t.LOCK.UPDATE,
   });
-  if (!ref) return { paid: false, reason: "NO_REFERRAL_ROW" };
-  if (ref.joinBonusPaid) return { paid: false, reason: "ALREADY_PAID" };
 
-  const sponsorId = ref.sponsorId;
-  if (!sponsorId) return { paid: false, reason: "NO_SPONSOR" };
+  const referredOk = await isUnlockedUser(referredUserId);
+  if (!referredOk) return { released: 0 };
 
-  const [referredWallet, sponsorWallet] = await Promise.all([
-    Wallet.findOne({ where: { userId: referredUserId }, transaction: t, lock: t.LOCK.UPDATE }),
-    Wallet.findOne({ where: { userId: sponsorId }, transaction: t, lock: t.LOCK.UPDATE }),
-  ]);
+  let released = 0;
 
-  if (!referredWallet?.isUnlocked) return { paid: false, reason: "REFERRED_NOT_UNLOCKED" };
-  if (!sponsorWallet?.isUnlocked) return { paid: false, reason: "SPONSOR_NOT_UNLOCKED" };
+  for (const txn of pendingJoinTxns) {
+    if (txn?.meta?.pending !== true) continue;
 
-  const JOIN_BONUS = await getSettingNumber("JOIN_BONUS", t);
+    const meta = txn.meta || {};
+    if (Number(meta.referredUserId) !== Number(referredUserId)) continue;
 
-  const referredUser = await User.findByPk(referredUserId, {
-    transaction: t,
-    attributes: ["id", "name"],
-  });
+    const sponsorWallet = await Wallet.findByPk(txn.walletId, {
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+    if (!sponsorWallet) continue;
 
-  sponsorWallet.balance = Number(sponsorWallet.balance || 0) + Number(JOIN_BONUS);
-  await sponsorWallet.save({ transaction: t });
+    const sponsorOk = await isUnlockedUser(sponsorWallet.userId);
+    if (!sponsorOk) continue;
 
-  const txn = await WalletTransaction.create(
-    {
-      walletId: sponsorWallet.id,
-      type: "CREDIT",
-      amount: JOIN_BONUS,
-      reason: "REFERRAL_JOIN_BONUS",
-      meta: { referredUserId, referredName: referredUser?.name || null },
-    },
-    { transaction: t }
-  );
+    const amt = Number(txn.amount || 0);
 
-  ref.joinBonusPaid = true;
-  await ref.save({ transaction: t });
+    // ✅ move locked -> balance
+    sponsorWallet.lockedBalance = Math.max(
+      0,
+      Number(sponsorWallet.lockedBalance || 0) - amt
+    );
+    sponsorWallet.balance = Number(sponsorWallet.balance || 0) + amt;
+    sponsorWallet.totalBalance =
+      Number(sponsorWallet.balance || 0) + Number(sponsorWallet.lockedBalance || 0);
 
-  return { paid: true, sponsorId, txnId: txn.id, joinBonus: JOIN_BONUS };
+    await sponsorWallet.save({ transaction: t });
+
+    txn.meta = { ...meta, pending: false, releasedAt: new Date().toISOString(), pendingReason: null };
+    await txn.save({ transaction: t });
+
+    released += 1;
+  }
+
+  return { released };
 }
+
 
 // ✅ when sponsor unlocks -> pay all pending referrals that are already unlocked
 async function tryPayPendingJoinBonusesForSponsor({ sponsorId, t }) {
@@ -193,19 +309,19 @@ async function tryPayPendingJoinBonusesForSponsor({ sponsorId, t }) {
     sponsorWallet.balance = Number(sponsorWallet.balance || 0) + Number(JOIN_BONUS);
     await sponsorWallet.save({ transaction: t });
 
-    await WalletTransaction.create(
-      {
-        walletId: sponsorWallet.id,
-        type: "CREDIT",
-        amount: JOIN_BONUS,
-        reason: "REFERRAL_JOIN_BONUS",
-        meta: {
-          referredUserId: ref.referredUserId,
-          referredName: uMap.get(ref.referredUserId)?.name || null,
-        },
-      },
-      { transaction: t }
-    );
+    // await WalletTransaction.create(
+    //   {
+    //     walletId: sponsorWallet.id,
+    //     type: "CREDIT",
+    //     amount: JOIN_BONUS,
+    //     reason: "REFERRAL_JOIN_BONUS",
+    //     meta: {
+    //       referredUserId: ref.referredUserId,
+    //       referredName: uMap.get(ref.referredUserId)?.name || null,
+    //     },
+    //   },
+    //   { transaction: t }
+    // );
 
     ref.joinBonusPaid = true;
     await ref.save({ transaction: t });
@@ -282,7 +398,8 @@ router.post("/", auth, async (req, res) => {
     let wallet = null;
     if (paymentMethod === "WALLET") {
       wallet = await Wallet.findOne({ where: { userId: req.user.id } });
-      if (!wallet) wallet = await Wallet.create({ userId: req.user.id });
+      if (!wallet) wallet = await Wallet.create({ userId: req.user.id, balance: 0, lockedBalance: 0, totalBalance: 0, totalSpent: 0, isUnlocked: false });
+
 
       if (Number(wallet.balance) < Number(grandTotal)) {
         return res.status(400).json({ msg: "Insufficient wallet balance" });
@@ -316,8 +433,10 @@ router.post("/", auth, async (req, res) => {
 
     // ✅ WALLET: deduct + transaction + mark order paid
     if (paymentMethod === "WALLET") {
-      wallet.balance = Number(wallet.balance) - Number(grandTotal);
+      wallet.balance = Number(wallet.balance || 0) - Number(grandTotal || 0);
+      wallet.totalBalance = Number(wallet.balance || 0) + Number(wallet.lockedBalance || 0);
       await wallet.save();
+
 
       await WalletTransaction.create({
         walletId: wallet.id,
@@ -444,17 +563,30 @@ router.patch("/admin/:id/status", auth, isAdmin, async (req, res) => {
       });
 
       // ✅ if this user newly unlocked now
-      if (!spendInfo.wasUnlocked && spendInfo.wallet.isUnlocked) {
-        // 1) user unlocked => try pay sponsor join bonus (if sponsor unlocked too)
-        joinBonus = await tryPayJoinBonus({ referredUserId: order.userId, t });
+      // if (!spendInfo.wasUnlocked && spendInfo.wallet.isUnlocked) {
+      //   // 1) user unlocked => try pay sponsor join bonus (if sponsor unlocked too)
+      //   joinBonus = await tryPayJoinBonus({ referredUserId: order.userId, t });
 
-        // 2) user unlocked => if user is sponsor for others, pay pending
-        sponsorPending = await tryPayPendingJoinBonusesForSponsor({
-          sponsorId: order.userId,
+      //   // 2) user unlocked => if user is sponsor for others, pay pending
+      //   sponsorPending = await tryPayPendingJoinBonusesForSponsor({
+      //     sponsorId: order.userId,
+      //     t,
+      //   });
+      //     await tryReleasePendingPairBonuses(t);
+      // }
+      if (!spendInfo.wasUnlocked && spendInfo.wallet.isUnlocked) {
+  // ✅ referred unlocked now => release sponsor pending join bonus
+        const releasedJoin = await tryReleasePendingJoinBonusesForReferred({
+          referredUserId: order.userId,
           t,
         });
-          await tryReleasePendingPairBonuses(t);
+
+        // ✅ release pending pair bonuses too (but fix it to move locked->balance)
+        await tryReleasePendingPairBonuses(t);
+
+        sponsorPending = { releasedJoin };
       }
+
     }
 
     await t.commit();
