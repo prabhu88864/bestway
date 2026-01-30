@@ -7,7 +7,11 @@ const AppSetting = sequelize.define(
     key: { type: DataTypes.STRING(80), allowNull: false, unique: true },
     value: { type: DataTypes.STRING(255), allowNull: false },
   },
-  { timestamps: true }
+    {
+    timestamps: true,
+    tableName: "AppSettings",   // ✅ force exact
+    freezeTableName: true       // ✅ no auto-plural / case convert
+  }
 );
 
 export default AppSetting;

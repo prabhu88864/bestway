@@ -46,7 +46,7 @@ router.post("/", auth, async (req, res) => {
 
 /* ================= UPDATE SLAB (ADMIN) ================= */
 // PUT /api/delivery-charges/:id
-router.put("/:id", auth, isAdmin, async (req, res) => {
+router.put("/:id", auth, async (req, res) => {
   try {
     const slab = await DeliveryCharge.findByPk(req.params.id);
     if (!slab) return res.status(404).json({ msg: "Not found" });
@@ -69,7 +69,7 @@ router.put("/:id", auth, isAdmin, async (req, res) => {
 
 /* ================= DELETE SLAB (ADMIN) ================= */
 // DELETE /api/delivery-charges/:id
-router.delete("/:id", auth, isAdmin, async (req, res) => {
+router.delete("/:id", auth,  async (req, res) => {
   try {
     const slab = await DeliveryCharge.findByPk(req.params.id);
     if (!slab) return res.status(404).json({ msg: "Not found" });

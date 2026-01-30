@@ -2482,7 +2482,7 @@ console.log(
   "AUTH FILE: JOIN + PAIR BONUS (pending until 30k unlock) + PAIR-PENDING + PAIR-MATCH + ADMIN DIRECT CREATE"
 );
 
-const MIN_SPEND_UNLOCK = 30000;
+// const MIN_SPEND_UNLOCK = 30000;
 const JOIN_BONUS = 5000;
 const PAIR_BONUS = 3000;
 
@@ -2502,7 +2502,9 @@ async function creditWallet({ userId, amount, reason, meta, t }) {
   });
   if (!wallet) throw new Error("Wallet not found");
 
-  const minSpend = MIN_SPEND_UNLOCK;
+ const minSpend = (await getSettingNumber("MIN_SPEND_UNLOCK", t)) || 30000;
+
+
 
   const isUnlocked = (w) =>
     !!w?.isUnlocked && Number(w?.totalSpent || 0) >= Number(minSpend);

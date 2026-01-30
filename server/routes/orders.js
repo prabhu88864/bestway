@@ -82,7 +82,9 @@ const router = express.Router();
 //   }
 // }
 async function tryReleasePendingPairBonuses(t) {
-  const minSpend = 30000;
+  const minSpend = await getSettingNumber("MIN_SPEND_UNLOCK", t) || 30000;
+
+
 
   const isUnlockedUser = async (userId) => {
     const w = await Wallet.findOne({ where: { userId }, transaction: t });
@@ -210,7 +212,8 @@ async function addSpendAndUnlockIfNeeded({ userId, amount, t }) {
 //   return { paid: true, sponsorId, txnId: txn.id, joinBonus: JOIN_BONUS };
 // }
 async function tryReleasePendingJoinBonusesForReferred({ referredUserId, t }) {
-  const minSpend = 30000;
+const minSpend = await getSettingNumber("MIN_SPEND_UNLOCK", t) || 30000;
+
 
   const isUnlockedUser = async (userId) => {
     const w = await Wallet.findOne({ where: { userId }, transaction: t });
