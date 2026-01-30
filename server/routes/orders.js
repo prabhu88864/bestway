@@ -152,7 +152,8 @@ async function addSpendAndUnlockIfNeeded({ userId, amount, t }) {
   });
   if (!wallet) throw new Error("Wallet not found");
 
-  const minSpend = await getSettingNumber("MIN_SPEND_UNLOCK", t);
+const minSpend = (await getSettingNumber("MIN_SPEND_UNLOCK", t)) || 30000;
+
   const wasUnlocked = !!wallet.isUnlocked;
 
   wallet.totalSpent = Number(wallet.totalSpent || 0) + Number(amount || 0);
@@ -285,8 +286,8 @@ async function tryPayPendingJoinBonusesForSponsor({ sponsorId, t }) {
     lock: t.LOCK.UPDATE,
   });
   if (!pending.length) return { paidCount: 0 };
+const JOIN_BONUS = (await getSettingNumber("JOIN_BONUS", t)) || 5000;
 
-  const JOIN_BONUS = await getSettingNumber("JOIN_BONUS", t);
 
   const referredIds = pending.map((r) => r.referredUserId);
 

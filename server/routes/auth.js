@@ -2475,6 +2475,8 @@ import BinaryNode from "../models/BinaryNode.js";
 
 import PairPending from "../models/PairPending.js";
 import PairMatch from "../models/PairMatch.js";
+import { getSettingNumber } from "../config/settings.js";
+
 
 const router = express.Router();
 
@@ -2483,8 +2485,7 @@ console.log(
 );
 
 // const MIN_SPEND_UNLOCK = 30000;
-const JOIN_BONUS = 5000;
-const PAIR_BONUS = 3000;
+
 
 const signToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "1d" });
@@ -2697,6 +2698,7 @@ async function updateUplineCountsAndBonuses({
   newlyJoinedUserId,
   t,
 }) {
+    const PAIR_BONUS = await getSettingNumber("PAIR_BONUS", t) || 3000;
   let node = await BinaryNode.findOne({
     where: { userId: startParentUserId },
     transaction: t,
@@ -2995,6 +2997,7 @@ router.post("/register", async (req, res) => {
 
       // ✅ JOIN BONUS (pending until sponsor + referred unlock)
       if (!refRow.joinBonusPaid) {
+         const JOIN_BONUS = await getSettingNumber("JOIN_BONUS", t) || 5000;
         const txn = await creditWallet({
           userId: sponsor.id,
           amount: JOIN_BONUS,
