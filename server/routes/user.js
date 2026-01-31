@@ -163,6 +163,38 @@ import isAdmin from "../middleware/isAdmin.js";
 import { uploadProfilePic } from "../config/upload.js";
 
 const router = express.Router();
+/**
+ * ✅ GET /api/users/me
+ * Returns currently logged-in user details
+ */
+router.get("/me", auth, async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id, {
+      attributes: [
+        "id",
+        "userID",
+        "name",
+        "email",
+        "phone",
+        "role",
+        "userType",
+        "profilePic",
+        "referralCode",
+        "createdAt",
+        "updatedAt",
+      ],
+    });
+
+    if (!user) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    res.json({ user });
+  } catch (err) {
+    console.error("GET /api/users/me error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
 
 /**
  * ✅ GET /api/users
@@ -346,6 +378,8 @@ router.delete("/:id", auth, isAdmin, async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 });
+
+
 
 export default router;
 
