@@ -2476,6 +2476,8 @@ import BinaryNode from "../models/BinaryNode.js";
 import PairPending from "../models/PairPending.js";
 import PairMatch from "../models/PairMatch.js";
 import { getSettingNumber } from "../config/settings.js";
+import { uploadProfilePic } from "../config/upload.js";
+
 
 
 const router = express.Router();
@@ -2860,71 +2862,380 @@ async function updateUplineCountsAndBonuses({
 // ========================= REGISTER =========================
 // POST /api/auth/register
 // Body: { name,email,phone,password, referralCode?: "<link-code>", role?: "USER"|"ADMIN" }
-router.post("/register", async (req, res) => {
-  const { name, email, phone, password } = req.body;
-  const referralCode = req.body.referralCode;
+// router.post("/register", async (req, res) => {
+//   const { name, email, phone, password } = req.body;
+//   const referralCode = req.body.referralCode;
 
-  const t = await sequelize.transaction();
-  try {
-    if (!name || !email || !phone || !password) {
-      throw new Error("name,email,phone,password required");
-    }
+//   const t = await sequelize.transaction();
+//   try {
+//     if (!name || !email || !phone || !password) {
+//       throw new Error("name,email,phone,password required");
+//     }
 
-    // prevent duplicates
-    const existsEmail = await User.findOne({ where: { email }, transaction: t });
-    if (existsEmail) throw new Error("Email already exists");
+//     // prevent duplicates
+//     const existsEmail = await User.findOne({ where: { email }, transaction: t });
+//     if (existsEmail) throw new Error("Email already exists");
 
-    const existsPhone = await User.findOne({ where: { phone }, transaction: t });
-    if (existsPhone) throw new Error("Phone already exists");
+//     const existsPhone = await User.findOne({ where: { phone }, transaction: t });
+//     if (existsPhone) throw new Error("Phone already exists");
 
-    // unique referralCode
-    let myCode = generateReferralCode();
-    while (
-      await User.findOne({ where: { referralCode: myCode }, transaction: t })
-    ) {
-      myCode = generateReferralCode();
-    }
+//     // unique referralCode
+//     let myCode = generateReferralCode();
+//     while (
+//       await User.findOne({ where: { referralCode: myCode }, transaction: t })
+//     ) {
+//       myCode = generateReferralCode();
+//     }
 
-    // ✅ ROLE LOGIC (DIRECT):
-    const requestedRole = String(req.body.role || "USER").toUpperCase();
-    const roleToSave = requestedRole === "ADMIN" ? "ADMIN" : "USER";
+//     // ✅ ROLE LOGIC (DIRECT):
+//     const requestedRole = String(req.body.role || "USER").toUpperCase();
+//     const roleToSave = requestedRole === "ADMIN" ? "ADMIN" : "USER";
 
-    // create user
-    const user = await User.create(
-      { name, email, phone, password, referralCode: myCode, role: roleToSave },
-      { transaction: t }
-    );
+//     // create user
+//     const user = await User.create(
+//       { name, email, phone, password, referralCode: myCode, role: roleToSave },
+//       { transaction: t }
+//     );
 
-    // create wallet
-   await Wallet.create(
-  {
-    userId: user.id,
-    balance: 0,
-    lockedBalance: 0,
-    totalBalance: 0,
-    totalSpent: 0,
-    isUnlocked: false,
-  },
-  { transaction: t }
-);
+//     // create wallet
+//    await Wallet.create(
+//   {
+//     userId: user.id,
+//     balance: 0,
+//     lockedBalance: 0,
+//     totalBalance: 0,
+//     totalSpent: 0,
+//     isUnlocked: false,
+//   },
+//   { transaction: t }
+// );
 
 
-    // create binary node
-    await BinaryNode.create(
-      {
-        userId: user.id,
-        parentId: null,
-        position: null,
-        leftChildId: null,
-        rightChildId: null,
-      },
-      { transaction: t }
-    );
+//     // create binary node
+//     await BinaryNode.create(
+//       {
+//         userId: user.id,
+//         parentId: null,
+//         position: null,
+//         leftChildId: null,
+//         rightChildId: null,
+//       },
+//       { transaction: t }
+//     );
 
-    // ✅ ADMIN register: no referral logic needed (optional)
-    // If you still want ADMIN to join in tree using referralCode, remove this if-block.
-    if (roleToSave === "ADMIN") {
+//     // ✅ ADMIN register: no referral logic needed (optional)
+//     // If you still want ADMIN to join in tree using referralCode, remove this if-block.
+//     if (roleToSave === "ADMIN") {
+//       await t.commit();
+//       const token = signToken(user.id);
+//       return res.json({
+//         msg: "Registered",
+//         token,
+//         user: {
+//           id: user.id,
+//           name: user.name,
+//           role: user.role,
+//           email: user.email,
+//           phone: user.phone,
+//           referralCode: user.referralCode,
+//         },
+//       });
+//     }
+
+//     // ========================= APPLY REFERRAL (SPILLOVER) =========================
+//     if (referralCode) {
+//       const link = await ReferralLink.findOne({
+//         where: { code: referralCode, isActive: true },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+//       if (!link) throw new Error("Invalid referral code");
+
+//       const sponsor = await User.findByPk(link.sponsorId, {
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+//       if (!sponsor) throw new Error("Sponsor not found");
+
+//       const pos = String(link.position || "").toUpperCase();
+//       if (!["LEFT", "RIGHT"].includes(pos))
+//         throw new Error("Invalid referral position");
+
+//       // direct sponsor
+//       user.sponsorId = sponsor.id;
+//       await user.save({ transaction: t });
+
+//       await ensureNode(sponsor.id, t);
+
+//       const placedParent = await findPlacementParent({
+//         sponsorUserId: sponsor.id,
+//         position: pos,
+//         t,
+//       });
+
+//       const refRow = await Referral.create(
+//         {
+//           sponsorId: sponsor.id,
+//           referredUserId: user.id,
+//           position: pos,
+//           joinBonusPaid: false,
+//         },
+//         { transaction: t }
+//       );
+
+//       const myNode = await BinaryNode.findOne({
+//         where: { userId: user.id },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//       });
+
+//       myNode.parentId = placedParent.userId;
+//       myNode.position = pos;
+//       await myNode.save({ transaction: t });
+
+//       if (pos === "LEFT") placedParent.leftChildId = user.id;
+//       else placedParent.rightChildId = user.id;
+//       await placedParent.save({ transaction: t });
+
+//       // ✅ JOIN BONUS (pending until sponsor + referred unlock)
+//       if (!refRow.joinBonusPaid) {
+//          const JOIN_BONUS = await getSettingNumber("JOIN_BONUS", t) || 5000;
+//         const txn = await creditWallet({
+//           userId: sponsor.id,
+//           amount: JOIN_BONUS,
+//           reason: "REFERRAL_JOIN_BONUS",
+//           meta: {
+//             referredUserId: user.id,
+//             referredName: user.name,
+//             placedUnderUserId: placedParent.userId,
+//             placedPosition: pos,
+//           },
+//           t,
+//         });
+
+//         if (txn?.meta?.pending !== true) {
+//           refRow.joinBonusPaid = true;
+//           await refRow.save({ transaction: t });
+//         }
+//       }
+
+//       // ✅ PAIR BONUS (pending until upline + left + right unlock)
+//       await updateUplineCountsAndBonuses({
+//         startParentUserId: placedParent.userId,
+//         placedPosition: pos,
+//         newlyJoinedUserId: user.id,
+//         t,
+//       });
+//     }
+
+//     await t.commit();
+
+//     const token = signToken(user.id);
+//     return res.json({
+//       msg: "Registered",
+//       token,
+//       user: {
+//         id: user.id,
+//         name: user.name,
+//         role: user.role,
+//         email: user.email,
+//         phone: user.phone,
+//         referralCode: user.referralCode,
+//       },
+//     });
+//   } catch (err) {
+//     await t.rollback();
+//     return res.status(400).json({ msg: err.message });
+//   }
+// });
+router.post("/register", (req, res) => {
+  uploadProfilePic(req, res, async (err) => {
+    console.log("REQ HEADERS =>", req.headers["content-type"]);
+    console.log("REQ BODY =>", req.body);
+    console.log("REQ FILE =>", req.file);
+
+    const t = await sequelize.transaction();
+
+    try {
+      if (err) return res.status(400).json({ msg: err.message });
+
+      const { name, email, phone, password } = req.body;
+      const referralCode = req.body.referralCode;
+
+      const userType = req.body.userType;
+     const profilePic = req.file
+  ? `/${req.file.path.split("\\").join("/")}`
+  : null;
+
+
+      if (!name || !email || !phone || !password) {
+        throw new Error("name,email,phone,password required");
+      }
+
+      // prevent duplicates
+      const existsEmail = await User.findOne({ where: { email }, transaction: t });
+      if (existsEmail) throw new Error("Email already exists");
+
+      const existsPhone = await User.findOne({ where: { phone }, transaction: t });
+      if (existsPhone) throw new Error("Phone already exists");
+
+      // unique referralCode
+      let myCode = generateReferralCode();
+      while (
+        await User.findOne({ where: { referralCode: myCode }, transaction: t })
+      ) {
+        myCode = generateReferralCode();
+      }
+
+      // role
+      const requestedRole = String(req.body.role || "USER").toUpperCase();
+      const roleToSave = requestedRole === "ADMIN" ? "ADMIN" : "USER";
+
+      // create user
+      const user = await User.create(
+        {
+          name,
+          email,
+          phone,
+          password,
+          referralCode: myCode,
+          role: roleToSave,
+          ...(userType ? { userType } : {}),
+          ...(profilePic ? { profilePic } : {}),
+        },
+        { transaction: t }
+      );
+
+      // create wallet
+      await Wallet.create(
+        {
+          userId: user.id,
+          balance: 0,
+          lockedBalance: 0,
+          totalBalance: 0,
+          totalSpent: 0,
+          isUnlocked: false,
+        },
+        { transaction: t }
+      );
+
+      // create binary node
+      await BinaryNode.create(
+        {
+          userId: user.id,
+          parentId: null,
+          position: null,
+          leftChildId: null,
+          rightChildId: null,
+        },
+        { transaction: t }
+      );
+
+      // ADMIN shortcut
+      if (roleToSave === "ADMIN") {
+        await t.commit();
+        const token = signToken(user.id);
+        return res.json({
+          msg: "Registered",
+          token,
+          user: {
+            id: user.id,
+           
+            name: user.name,
+            role: user.role,
+            email: user.email,
+          
+            phone: user.phone,
+            referralCode: user.referralCode,
+          },
+        });
+      }
+
+      // ================= APPLY REFERRAL =================
+      if (referralCode) {
+        const link = await ReferralLink.findOne({
+          where: { code: referralCode, isActive: true },
+          transaction: t,
+          lock: t.LOCK.UPDATE,
+        });
+        if (!link) throw new Error("Invalid referral code");
+
+        const sponsor = await User.findByPk(link.sponsorId, {
+          transaction: t,
+          lock: t.LOCK.UPDATE,
+        });
+        if (!sponsor) throw new Error("Sponsor not found");
+
+        const pos = String(link.position || "").toUpperCase();
+        if (!["LEFT", "RIGHT"].includes(pos))
+          throw new Error("Invalid referral position");
+
+        user.sponsorId = sponsor.id;
+        await user.save({ transaction: t });
+
+        await ensureNode(sponsor.id, t);
+
+        const placedParent = await findPlacementParent({
+          sponsorUserId: sponsor.id,
+          position: pos,
+          t,
+        });
+
+        const refRow = await Referral.create(
+          {
+            sponsorId: sponsor.id,
+            referredUserId: user.id,
+            position: pos,
+            joinBonusPaid: false,
+          },
+          { transaction: t }
+        );
+
+        const myNode = await BinaryNode.findOne({
+          where: { userId: user.id },
+          transaction: t,
+          lock: t.LOCK.UPDATE,
+        });
+
+        myNode.parentId = placedParent.userId;
+        myNode.position = pos;
+        await myNode.save({ transaction: t });
+
+        if (pos === "LEFT") placedParent.leftChildId = user.id;
+        else placedParent.rightChildId = user.id;
+        await placedParent.save({ transaction: t });
+
+        if (!refRow.joinBonusPaid) {
+          const JOIN_BONUS = (await getSettingNumber("JOIN_BONUS", t)) || 5000;
+          const txn = await creditWallet({
+            userId: sponsor.id,
+            amount: JOIN_BONUS,
+            reason: "REFERRAL_JOIN_BONUS",
+            meta: {
+              referredUserId: user.id,
+              referredName: user.name,
+              placedUnderUserId: placedParent.userId,
+              placedPosition: pos,
+            },
+            t,
+          });
+
+          if (txn?.meta?.pending !== true) {
+            refRow.joinBonusPaid = true;
+            await refRow.save({ transaction: t });
+          }
+        }
+
+        await updateUplineCountsAndBonuses({
+          startParentUserId: placedParent.userId,
+          placedPosition: pos,
+          newlyJoinedUserId: user.id,
+          t,
+        });
+      }
+
       await t.commit();
+
       const token = signToken(user.id);
       return res.json({
         msg: "Registered",
@@ -2933,119 +3244,21 @@ router.post("/register", async (req, res) => {
           id: user.id,
           name: user.name,
           role: user.role,
+           userID: user.userID,
           email: user.email,
           phone: user.phone,
+            userType: user.userType,
+            profilePic: user.profilePic,
           referralCode: user.referralCode,
         },
       });
+    } catch (err) {
+      await t.rollback();
+      return res.status(400).json({ msg: err.message });
     }
-
-    // ========================= APPLY REFERRAL (SPILLOVER) =========================
-    if (referralCode) {
-      const link = await ReferralLink.findOne({
-        where: { code: referralCode, isActive: true },
-        transaction: t,
-        lock: t.LOCK.UPDATE,
-      });
-      if (!link) throw new Error("Invalid referral code");
-
-      const sponsor = await User.findByPk(link.sponsorId, {
-        transaction: t,
-        lock: t.LOCK.UPDATE,
-      });
-      if (!sponsor) throw new Error("Sponsor not found");
-
-      const pos = String(link.position || "").toUpperCase();
-      if (!["LEFT", "RIGHT"].includes(pos))
-        throw new Error("Invalid referral position");
-
-      // direct sponsor
-      user.sponsorId = sponsor.id;
-      await user.save({ transaction: t });
-
-      await ensureNode(sponsor.id, t);
-
-      const placedParent = await findPlacementParent({
-        sponsorUserId: sponsor.id,
-        position: pos,
-        t,
-      });
-
-      const refRow = await Referral.create(
-        {
-          sponsorId: sponsor.id,
-          referredUserId: user.id,
-          position: pos,
-          joinBonusPaid: false,
-        },
-        { transaction: t }
-      );
-
-      const myNode = await BinaryNode.findOne({
-        where: { userId: user.id },
-        transaction: t,
-        lock: t.LOCK.UPDATE,
-      });
-
-      myNode.parentId = placedParent.userId;
-      myNode.position = pos;
-      await myNode.save({ transaction: t });
-
-      if (pos === "LEFT") placedParent.leftChildId = user.id;
-      else placedParent.rightChildId = user.id;
-      await placedParent.save({ transaction: t });
-
-      // ✅ JOIN BONUS (pending until sponsor + referred unlock)
-      if (!refRow.joinBonusPaid) {
-         const JOIN_BONUS = await getSettingNumber("JOIN_BONUS", t) || 5000;
-        const txn = await creditWallet({
-          userId: sponsor.id,
-          amount: JOIN_BONUS,
-          reason: "REFERRAL_JOIN_BONUS",
-          meta: {
-            referredUserId: user.id,
-            referredName: user.name,
-            placedUnderUserId: placedParent.userId,
-            placedPosition: pos,
-          },
-          t,
-        });
-
-        if (txn?.meta?.pending !== true) {
-          refRow.joinBonusPaid = true;
-          await refRow.save({ transaction: t });
-        }
-      }
-
-      // ✅ PAIR BONUS (pending until upline + left + right unlock)
-      await updateUplineCountsAndBonuses({
-        startParentUserId: placedParent.userId,
-        placedPosition: pos,
-        newlyJoinedUserId: user.id,
-        t,
-      });
-    }
-
-    await t.commit();
-
-    const token = signToken(user.id);
-    return res.json({
-      msg: "Registered",
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-        email: user.email,
-        phone: user.phone,
-        referralCode: user.referralCode,
-      },
-    });
-  } catch (err) {
-    await t.rollback();
-    return res.status(400).json({ msg: err.message });
-  }
+  });
 });
+
 
 // ========================= LOGIN =========================
 router.post("/login", async (req, res) => {
@@ -3079,5 +3292,3 @@ router.post("/login", async (req, res) => {
 });
 
 export default router;
-
-
