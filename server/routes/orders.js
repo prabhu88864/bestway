@@ -580,6 +580,11 @@ router.patch("/admin/:id/status", auth, isAdmin, async (req, res) => {
       // }
       if (!spendInfo.wasUnlocked && spendInfo.wallet.isUnlocked) {
   // ✅ referred unlocked now => release sponsor pending join bonus
+
+      await User.update(
+        { userType: "ENTREPRENEUR" },
+        { where: { id: order.userId }, transaction: t }
+      );
         const releasedJoin = await tryReleasePendingJoinBonusesForReferred({
           referredUserId: order.userId,
           t,

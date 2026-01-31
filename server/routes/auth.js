@@ -3261,28 +3261,81 @@ router.post("/register", (req, res) => {
 
 
 // ========================= LOGIN =========================
+// router.post("/login", async (req, res) => {
+//   try {
+//     const { email, password } = req.body;
+//     if (!email || !password)
+//       return res.status(400).json({ msg: "email,password required" });
+
+//     const user = await User.findOne({ where: { email } });
+//     if (!user) return res.status(400).json({ msg: "Invalid credentials" });
+
+//     const ok = await bcrypt.compare(password, user.password);
+//     if (!ok) return res.status(400).json({ msg: "Invalid credentials" });
+
+//     const token = signToken(user.id);
+//     return res.json({
+//       msg: "Logged in",
+//       token,
+//       user: {
+//         id: user.id,
+//         name: user.name,
+//         role: user.role,
+//         email: user.email,
+//         phone: user.phone,
+//         referralCode: user.referralCode,
+//       },
+//     });
+//   } catch (err) {
+//     return res.status(500).json({ msg: err.message });
+//   }
+// });
+
+
+// ✅ LOGIN WITH userID OR email
+// Body: { login: "BW000123" OR "test@gmail.com", password: "123456" }
+
+import { Op } from "sequelize"; // ✅ add at top of file once
+
 router.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password)
-      return res.status(400).json({ msg: "email,password required" });
+    const { userID, password } = req.body;
 
-    const user = await User.findOne({ where: { email } });
-    if (!user) return res.status(400).json({ msg: "Invalid credentials" });
+    if (!userID || !password) {
+      return res.status(400).json({ msg: "userID and password required" });
+    }
+
+    const input = String(userID).trim();
+
+    const user = await User.findOne({
+      where: {
+        [Op.or]: [{ userID: input }, { email: input }],
+      },
+    });
+
+    if (!user) {
+      return res.status(400).json({ msg: "Invalid userIDor password" });
+    }
 
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(400).json({ msg: "Invalid credentials" });
+    if (!ok) {
+      return res.status(400).json({ msg: "Invalid userID or password" });
+    }
 
     const token = signToken(user.id);
+
     return res.json({
       msg: "Logged in",
       token,
       user: {
         id: user.id,
+        userID: user.userID,
         name: user.name,
         role: user.role,
         email: user.email,
         phone: user.phone,
+        userType: user.userType,
+        profilePic: user.profilePic,
         referralCode: user.referralCode,
       },
     });
@@ -3290,5 +3343,8 @@ router.post("/login", async (req, res) => {
     return res.status(500).json({ msg: err.message });
   }
 });
+
+
+
 
 export default router;
