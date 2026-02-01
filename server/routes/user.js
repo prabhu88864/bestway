@@ -227,6 +227,7 @@ router.get("/", auth, isAdmin, async (req, res) => {
         "phone",
         "role",
         "userType",
+           "password",
         "profilePic",
         "createdAt",
         "updatedAt",
@@ -257,6 +258,7 @@ router.get("/:id", auth, isAdmin, async (req, res) => {
         "phone",
         "role",
         "userType",
+           "password",
         "profilePic",
         "createdAt",
         "updatedAt",
@@ -319,9 +321,9 @@ router.put("/:id", auth, (req, res) => {
       }
 
       // password update
-      if (password) {
-        user.password = await bcrypt.hash(password, 10);
-      }
+     if (password) {
+      user.password = password; // ⚠️ plain save
+    }
 
       // profilePic update (only if file uploaded)
       if (req.file) {
@@ -371,24 +373,21 @@ router.post("/change-password", auth, async (req, res) => {
       return res.status(400).json({ msg: "New password must be at least 6 characters" });
     }
 
-    // get user with password
     const user = await User.findByPk(req.user.id);
     if (!user) return res.status(404).json({ msg: "User not found" });
 
-    // verify old password
-    const ok = await bcrypt.compare(String(oldPassword), user.password);
-    if (!ok) {
+    // ✅ plain verify
+    if (String(oldPassword) !== String(user.password)) {
       return res.status(400).json({ msg: "Old password is incorrect" });
     }
 
-    // prevent same password (optional)
-    const same = await bcrypt.compare(String(newPassword), user.password);
-    if (same) {
+    // ✅ prevent same password
+    if (String(newPassword) === String(user.password)) {
       return res.status(400).json({ msg: "New password must be different" });
     }
 
-    // update
-    user.password = newPassword;
+    // ✅ update plain
+    user.password = String(newPassword);
     await user.save();
 
     return res.json({ msg: "Password updated successfully" });
@@ -397,6 +396,7 @@ router.post("/change-password", auth, async (req, res) => {
     return res.status(500).json({ msg: "Server error" });
   }
 });
+
 
 
 /**

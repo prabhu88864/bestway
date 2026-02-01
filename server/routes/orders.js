@@ -348,6 +348,7 @@ router.post("/", auth, async (req, res) => {
       return res.status(400).json({ msg: "paymentMethod required" });
     }
       if (!addressId) return res.status(400).json({ msg: "addressId required" });
+      
 
     // Load cart with products
     const cart = await Cart.findOne({
@@ -362,11 +363,11 @@ router.post("/", auth, async (req, res) => {
       where: { id: addressId, userId: req.user.id, isActive: true },
     });
     if (!address) return res.status(400).json({ msg: "Invalid address" });
-
-   let billAmount = 0;
+let billAmount = 0;
 let totalDiscount = 0;
 
-const userType = String(req.user?.userType || "").toUpperCase();
+const dbUser = await User.findByPk(req.user.id, { attributes: ["id", "userType"] });
+const userType = String(dbUser?.userType || "").toUpperCase();
 
 for (const item of cart.CartItems) {
   const p = item.Product;
@@ -386,6 +387,7 @@ for (const item of cart.CartItems) {
   billAmount += lineBase;
   totalDiscount += lineDiscount;
 }
+
 
 
     // ================= DELIVERY CHARGE (DB slabs) =================
