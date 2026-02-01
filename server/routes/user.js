@@ -357,6 +357,47 @@ router.put("/:id", auth, (req, res) => {
     }
   });
 });
+// ✅ POST /api/users/change-password
+// Body: { oldPassword, newPassword }
+router.post("/change-password", auth, async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ msg: "oldPassword and newPassword required" });
+    }
+
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ msg: "New password must be at least 6 characters" });
+    }
+
+    // get user with password
+    const user = await User.findByPk(req.user.id);
+    if (!user) return res.status(404).json({ msg: "User not found" });
+
+    // verify old password
+    const ok = await bcrypt.compare(String(oldPassword), user.password);
+    if (!ok) {
+      return res.status(400).json({ msg: "Old password is incorrect" });
+    }
+
+    // prevent same password (optional)
+    const same = await bcrypt.compare(String(newPassword), user.password);
+    if (same) {
+      return res.status(400).json({ msg: "New password must be different" });
+    }
+
+    // update
+    user.password = await bcrypt.hash(String(newPassword), 10);
+    await user.save();
+
+    return res.json({ msg: "Password updated successfully" });
+  } catch (err) {
+    console.error("POST /api/users/change-password error:", err);
+    return res.status(500).json({ msg: "Server error" });
+  }
+});
+
 
 /**
  * ✅ DELETE /api/users/:id
