@@ -67,6 +67,8 @@ export default function AdminDashboard() {
         .get("/api/banners")
         .then((r) => r.data?.total ?? (r.data?.banners?.length || 0))
         .catch(() => 0);
+
+
         const addressesReq = axiosInstance
         .get("/api/addresses/admin/all")
         .then((r) => r.data?.total ?? (r.data?.addresses?.length || 0))
@@ -76,15 +78,36 @@ export default function AdminDashboard() {
       .then((r) => r.data?.total ?? (r.data?.payments?.length || 0))
       .catch(() => 0);
 
+      const pairsReq = axiosInstance
+      .get("/api/pairs/admin") // ✅ admin pairs api
+      .then((r) => r.data?.total ?? (r.data?.pairs?.length || 0))
+      .catch(() => 0);
 
-      const [users, products, orders, banners, addresses,payments, walletTxns] = await Promise.all([
+
+      const referalReq = axiosInstance
+        .get("/api/referal/admin")
+        .then((r) => r.data?.total ?? (r.data?.referals?.length || 0))
+        .catch(() => 0);
+
+
+      const deliveryReq = axiosInstance
+        .get("/api/delivery/admin")
+        .then((r) => r.data?.total ?? (r.data?.deliveryCharges?.length || 0))
+        .catch(() => 0);
+
+
+      const [users, products, orders, banners, addresses,payments, walletTxns, pairs, referal, delivery] = await Promise.all([
         usersReq,
         productsReq,
         ordersReq,
         bannersReq,
         addressesReq,
          paymentsReq,
-          walletTxnsReq
+          walletTxnsReq,
+          pairsReq,
+          referalReq,
+          deliveryReq,
+
       ]);
 
       setCounts((prev) => ({
@@ -96,6 +119,9 @@ export default function AdminDashboard() {
          addresses,
           payments,
           walletTxns,
+          pairs,
+          referal,
+          delivery,
       }));
     } catch (e) {
       console.log("fetchCounts error", e);
@@ -146,6 +172,21 @@ export default function AdminDashboard() {
   value={counts.walletTxns}
   onClick={() => navigate("/admin/wallet-transactions")}
   
+/>
+    <StatCard
+  title="Pairs"
+  value={counts.pairs}
+  onClick={() => navigate("/admin/pairs")}
+/>
+    <StatCard
+  title="Referal"
+  value={counts.referal}
+  onClick={() => navigate("/admin/referal")}
+/>
+    <StatCard
+  title="Delivery Charges"
+  value={counts.delivery}
+  onClick={() => navigate("/admin/delivery")}
 />
       </div>
       

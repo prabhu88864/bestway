@@ -15,6 +15,14 @@ import Register from "./components/Register";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Dashboard from "./components/Dashboard";
 
+import ProductDetails from "./Pages/ProductDetails";
+import Cart from "./Pages/Cart";
+import Wallet from "./Pages/Wallet";
+import Order from "./Pages/Order";
+import Referal from "./Pages/Referal"
+import Tree from "./Pages/Tree";
+
+
 import AdminLogin from "./admin/AdminLogin";
 import AdminDashboard from "./admin/AdminDashboard";
 
@@ -25,6 +33,9 @@ import AdminProducts from "./admin/AdminProducts";
 import AdminBanners from "./admin/AdminBanners";
 import AdminPayments from "./admin/AdminPayments";
 import AdminWalletTransactions from "./admin/AdminWalletTransactions";
+import AdminPairs from "./admin/AdminPairs";
+import AdminReferal from "./admin/AdminReferal";
+import AdminDelivery from "./admin/AdminDelivery";
 
 
 /* ✅ Router inside helper component so we can use useLocation safely */
@@ -82,6 +93,17 @@ function AppRoutes() {
           }
         />
 
+
+<Route path="/ProductDetails/:id" element={<ProductDetails />} />
+
+<Route path="/cart" element={<Cart />} />
+<Route path="/wallet" element={<Wallet />} />
+<Route path="/Order" element={<Order />} />
+<Route path="/Referal" element={<Referal />} />
+<Route path="/Tree" element={<Tree />} />
+
+
+
         {/* ============ ADMIN (No Navbar, No Container) ============ */}
         <Route path="/admin" element={<AdminLogin />} />
         <Route path="/admin/dashboard" element={<AdminDashboard/>} />
@@ -91,7 +113,12 @@ function AppRoutes() {
         <Route path="/admin/banners" element={<AdminBanners />} />
         <Route path="/admin/payments" element={<AdminPayments />} />
       <Route path="/admin/wallet-transactions" element={<AdminWalletTransactions />} />
+      <Route path="/admin/pairs" element={<AdminPairs />} />
+      <Route path="/admin/referal" element={<AdminReferal />} />
+      <Route path="/admin/delivery" element={<AdminDelivery />} />
        
+
+        {/* ============ USER PROTECTED ============ */}
 
         {/* ============ DEFAULT ============ */}
         <Route

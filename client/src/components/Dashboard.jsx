@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BannerCarousel from "../components/BannerCarousel";
+import Products from "../components/Products";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -54,6 +55,8 @@ export default function Dashboard() {
 
       {/* ✅ FULL WIDTH BANNER */}
       <BannerCarousel placement="HOME_TOP" type="SLIDER" />
+      <Products/>
+
     </>
   );
 }

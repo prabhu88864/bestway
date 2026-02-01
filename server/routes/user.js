@@ -279,7 +279,7 @@ router.get("/:id", auth, isAdmin, async (req, res) => {
  *
  * Body: { name?, email?, phone?, role?, password?, userType?, profilePic(file) }
  */
-router.put("/:id", auth, isAdmin, (req, res) => {
+router.put("/:id", auth, (req, res) => {
   uploadProfilePic(req, res, async (err) => {
     try {
       if (err) return res.status(400).json({ msg: err.message });
