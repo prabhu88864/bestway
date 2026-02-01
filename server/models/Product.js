@@ -33,6 +33,17 @@ const Product = sequelize.define(
 
     // Show on homepage / carousel
     featured: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    entrepreneurDiscount: {
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: false,
+      defaultValue: 0.0, // percentage
+    },
+
+    traineeEntrepreneurDiscount: {
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: false,
+      defaultValue: 0.0, // percentage
+    },
 
     // UI badge like "Popular ✨", "New Arrival"
     badge: {
