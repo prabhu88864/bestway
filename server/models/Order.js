@@ -24,6 +24,11 @@ const Order = sequelize.define(
       type: DataTypes.ENUM("COD", "WALLET", "RAZORPAY"),
       allowNull: false,
     },
+     totalDiscount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+    },
 
     paymentStatus: {
       type: DataTypes.ENUM("PENDING", "SUCCESS", "FAILED"),

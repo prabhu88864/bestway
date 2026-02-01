@@ -363,24 +363,30 @@ router.post("/", auth, async (req, res) => {
     });
     if (!address) return res.status(400).json({ msg: "Invalid address" });
 
-    // Stock validation + total (billAmount)
-    let billAmount = 0;
+   let billAmount = 0;
+let totalDiscount = 0;
 
-    for (const item of cart.CartItems) {
-      const p = item.Product;
+const userType = String(req.user?.userType || "").toUpperCase();
 
-      if (!p || !p.isActive) {
-        return res.status(400).json({ msg: "Invalid product in cart" });
-      }
+for (const item of cart.CartItems) {
+  const p = item.Product;
+  const qty = Number(item.qty || 0);
+  const price = Number(p.price || 0);
 
-      if (p.stockQty < item.qty) {
-        return res.status(400).json({
-          msg: `${p.name} out of stock. Available: ${p.stockQty}`,
-        });
-      }
+  let discPercent = 0;
+  if (userType === "ENTREPRENEUR") {
+    discPercent = Number(p.entrepreneurDiscount || 0);
+  } else if (userType === "TRAINEE_ENTREPRENEUR") {
+    discPercent = Number(p.traineeEntrepreneurDiscount || 0);
+  }
 
-      billAmount += item.qty * Number(p.price);
-    }
+  const lineBase = qty * price;
+  const lineDiscount = (lineBase * discPercent) / 100;
+
+  billAmount += lineBase;
+  totalDiscount += lineDiscount;
+}
+
 
     // ================= DELIVERY CHARGE (DB slabs) =================
     const slab = await DeliveryCharge.findOne({
@@ -396,7 +402,11 @@ router.post("/", auth, async (req, res) => {
     });
 
     const deliveryCharge = slab ? Number(slab.charge) : 0;
-    const grandTotal = Number(billAmount) + Number(deliveryCharge);
+   const grandTotal = Math.max(
+  0,
+  Number(billAmount) - Number(totalDiscount) + Number(deliveryCharge)
+);
+
 
     // ✅ WALLET: check balance BEFORE creating order
     let wallet = null;
@@ -414,6 +424,8 @@ router.post("/", auth, async (req, res) => {
     const order = await Order.create({
       userId: req.user.id,
       totalAmount: grandTotal,
+       totalDiscount: Number(totalDiscount.toFixed(2)),
+
       addressId: address.id,
       deliveryCharge: deliveryCharge,
       paymentMethod,
@@ -463,6 +475,7 @@ router.post("/", auth, async (req, res) => {
       msg: "Order placed",
       orderId: order.id,
       addressId: order.addressId,
+      totalDiscount: Number(totalDiscount.toFixed(2)),
       billAmount,
       deliveryCharge,
       grandTotal,
