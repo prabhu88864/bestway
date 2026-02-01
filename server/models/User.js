@@ -46,11 +46,6 @@ User.beforeValidate(async (user, options) => {
   }
 });
 
-// ✅ hash only when password changed (prevents double hashing)
-User.beforeSave(async (user) => {
-  if (user.changed("password")) {
-    user.password = await bcrypt.hash(user.password, 10);
-  }
-});
+
 
 export default User;
