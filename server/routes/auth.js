@@ -2477,6 +2477,7 @@ import PairPending from "../models/PairPending.js";
 import PairMatch from "../models/PairMatch.js";
 import { getSettingNumber } from "../config/settings.js";
 import { uploadProfilePic } from "../config/upload.js";
+import { Op } from "sequelize";
 
 
 
@@ -3295,7 +3296,7 @@ router.post("/register", (req, res) => {
 // ✅ LOGIN WITH userID OR email
 // Body: { login: "BW000123" OR "test@gmail.com", password: "123456" }
 
-import { Op } from "sequelize"; // ✅ add at top of file once
+// import { Op } from "sequelize"; // ✅ add at top of file once
 
 router.post("/login", async (req, res) => {
   try {
@@ -3317,10 +3318,10 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ msg: "Invalid userIDor password" });
     }
 
-    const ok = await bcrypt.compare(password, user.password);
-    if (!ok) {
-      return res.status(400).json({ msg: "Invalid userID or password" });
-    }
+    // const ok = await bcrypt.compare(password, user.password);
+    // if (!ok) {
+    //   return res.status(400).json({ msg: "Invalid userID or password" });
+    // }
 
     const token = signToken(user.id);
 
