@@ -33,16 +33,28 @@ const User = sequelize.define("User", {
   sponsorPaidPairs: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
 });
 
+const generateNumericUserID = () => {
+  const num = Math.floor(100000 + Math.random() * 900000); // 6 digits
+  return `SUN${num}`;
+};
 // ✅ generate userID BEFORE validation
 User.beforeValidate(async (user, options) => {
   if (!user.userID) {
-    const findOpts = { order: [["id", "DESC"]], attributes: ["id"] };
-    if (options?.transaction) findOpts.transaction = options.transaction;
+    let isUnique = false;
 
-    const lastUser = await User.findOne(findOpts);
-    const next = lastUser ? lastUser.id + 1 : 1;
+    while (!isUnique) {
+      const tempId = generateNumericUserID();
 
-    user.userID = "SUN" + String(next).padStart(6, "0");
+      const exists = await User.findOne({
+        where: { userID: tempId },
+        transaction: options?.transaction,
+      });
+
+      if (!exists) {
+        user.userID = tempId;
+        isUnique = true;
+      }
+    }
   }
 });
 

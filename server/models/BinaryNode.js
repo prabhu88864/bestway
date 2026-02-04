@@ -2,7 +2,8 @@ import { DataTypes } from "sequelize";
 import { sequelize } from "../config/db.js";
 
 const BinaryNode = sequelize.define("BinaryNode", {
-  userId: { type: DataTypes.INTEGER, allowNull: false, unique: true },
+  userPkId:{ type: DataTypes.STRING(12), allowNull: false, unique: true } , 
+userId:  { type: DataTypes.INTEGER, allowNull: false } ,
   parentId: { type: DataTypes.INTEGER, allowNull: true },
   position: { type: DataTypes.ENUM("LEFT", "RIGHT"), allowNull: true },
   leftChildId: { type: DataTypes.INTEGER, allowNull: true },

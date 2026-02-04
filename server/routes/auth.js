@@ -3124,6 +3124,7 @@ router.post("/register", (req, res) => {
       await BinaryNode.create(
         {
           userId: user.id,
+          userPkId:user.userID,
           parentId: null,
           position: null,
           leftChildId: null,
