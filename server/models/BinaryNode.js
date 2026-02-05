@@ -10,6 +10,13 @@ userId:  { type: DataTypes.INTEGER, allowNull: false } ,
   rightChildId: { type: DataTypes.INTEGER, allowNull: true },
 leftQueue: { type: DataTypes.JSON, allowNull: false, defaultValue: [] },
 rightQueue:{ type: DataTypes.JSON, allowNull: false, defaultValue: [] },
+  userType: { type: DataTypes.STRING(40), allowNull: true }, 
+joiningDate: {
+  type: DataTypes.DATE,
+  allowNull: false,
+  defaultValue: DataTypes.NOW,
+},
+
 
 }, { timestamps: true });
 

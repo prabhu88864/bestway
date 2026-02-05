@@ -3125,6 +3125,8 @@ router.post("/register", (req, res) => {
         {
           userId: user.id,
           userPkId:user.userID,
+          userType: user.userType || userType || null,
+          joiningDate: new Date(), 
           parentId: null,
           position: null,
           leftChildId: null,
