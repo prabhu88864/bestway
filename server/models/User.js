@@ -31,6 +31,13 @@ const User = sequelize.define("User", {
   rightCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   paidPairs: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   sponsorPaidPairs: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+
+  // Bank Details
+  bankAccountNumber: { type: DataTypes.STRING, allowNull: true },
+  ifscCode: { type: DataTypes.STRING, allowNull: true },
+  accountHolderName: { type: DataTypes.STRING, allowNull: true },
+  panNumber: { type: DataTypes.STRING, allowNull: true },
+  upiId: { type: DataTypes.STRING, allowNull: true },
 });
 
 const generateNumericUserID = () => {

@@ -592,7 +592,7 @@
 //       msg: "Logged in",
 //       token,
 //       user: { id: user.id, name: user.name, role: user.role, email: user.email, phone: user.phone, referralCode: user.referralCode },
-  
+
 //     });
 //   } catch (err) {
 //     return res.status(500).json({ msg: err.message });
@@ -762,8 +762,8 @@
 // }
 
 
-   
-   
+
+
 
 //     await uplineUser.save({ transaction: t });
 
@@ -978,7 +978,7 @@
 
 
 /// working 
-          ///up to add
+///up to add
 //                     // unclock wallet
 
 // import express from "express";
@@ -2506,7 +2506,7 @@ async function creditWallet({ userId, amount, reason, meta, t }) {
   });
   if (!wallet) throw new Error("Wallet not found");
 
- const minSpend = (await getSettingNumber("MIN_SPEND_UNLOCK", t)) || 30000;
+  const minSpend = (await getSettingNumber("MIN_SPEND_UNLOCK", t)) || 30000;
 
 
 
@@ -2591,52 +2591,52 @@ async function creditWallet({ userId, amount, reason, meta, t }) {
     }
   }
 
-// ✅ If not eligible -> create pending txn + add to lockedBalance
-if (!canCredit) {
+  // ✅ If not eligible -> create pending txn + add to lockedBalance
+  if (!canCredit) {
+    const txn = await WalletTransaction.create(
+      {
+        walletId: wallet.id,
+        type: "CREDIT",
+        amount,
+        reason,
+        meta: {
+          ...(meta || {}),
+          pending: true,
+          pendingReason,
+          minSpendRequired: minSpend,
+          createdButNotCredited: true,
+        },
+      },
+      { transaction: t }
+    );
+
+    wallet.lockedBalance = Number(wallet.lockedBalance || 0) + Number(amount || 0);
+    wallet.totalBalance =
+      Number(wallet.balance || 0) + Number(wallet.lockedBalance || 0);
+
+    await wallet.save({ transaction: t });
+    return txn;
+  }
+
+  // ✅ Eligible -> credit wallet balance
+  wallet.balance = Number(wallet.balance || 0) + Number(amount || 0);
+  wallet.totalBalance =
+    Number(wallet.balance || 0) + Number(wallet.lockedBalance || 0);
+
+  await wallet.save({ transaction: t });
+
   const txn = await WalletTransaction.create(
     {
       walletId: wallet.id,
       type: "CREDIT",
       amount,
       reason,
-      meta: {
-        ...(meta || {}),
-        pending: true,
-        pendingReason,
-        minSpendRequired: minSpend,
-        createdButNotCredited: true,
-      },
+      meta: meta || null,
     },
     { transaction: t }
   );
 
-  wallet.lockedBalance = Number(wallet.lockedBalance || 0) + Number(amount || 0);
-  wallet.totalBalance =
-    Number(wallet.balance || 0) + Number(wallet.lockedBalance || 0);
-
-  await wallet.save({ transaction: t });
   return txn;
-}
-
-// ✅ Eligible -> credit wallet balance
-wallet.balance = Number(wallet.balance || 0) + Number(amount || 0);
-wallet.totalBalance =
-  Number(wallet.balance || 0) + Number(wallet.lockedBalance || 0);
-
-await wallet.save({ transaction: t });
-
-const txn = await WalletTransaction.create(
-  {
-    walletId: wallet.id,
-    type: "CREDIT",
-    amount,
-    reason,
-    meta: meta || null,
-  },
-  { transaction: t }
-);
-
-return txn;
 
 }
 
@@ -2701,7 +2701,7 @@ async function updateUplineCountsAndBonuses({
   newlyJoinedUserId,
   t,
 }) {
-    const PAIR_BONUS = await getSettingNumber("PAIR_BONUS", t) || 3000;
+  const PAIR_BONUS = await getSettingNumber("PAIR_BONUS", t) || 3000;
   let node = await BinaryNode.findOne({
     where: { userId: startParentUserId },
     transaction: t,
@@ -3064,9 +3064,10 @@ router.post("/register", (req, res) => {
       const referralCode = req.body.referralCode;
 
       const userType = req.body.userType;
-     const profilePic = req.file
-  ? `/${req.file.path.split("\\").join("/")}`
-  : null;
+      const { bankAccountNumber, ifscCode, accountHolderName, panNumber, upiId } = req.body;
+      const profilePic = req.file
+        ? `/${req.file.path.split("\\").join("/")}`
+        : null;
 
 
       if (!name || !email || !phone || !password) {
@@ -3103,6 +3104,11 @@ router.post("/register", (req, res) => {
           role: roleToSave,
           ...(userType ? { userType } : {}),
           ...(profilePic ? { profilePic } : {}),
+          ...(bankAccountNumber ? { bankAccountNumber } : {}),
+          ...(ifscCode ? { ifscCode } : {}),
+          ...(accountHolderName ? { accountHolderName } : {}),
+          ...(panNumber ? { panNumber } : {}),
+          ...(upiId ? { upiId } : {}),
         },
         { transaction: t }
       );
@@ -3124,9 +3130,9 @@ router.post("/register", (req, res) => {
       await BinaryNode.create(
         {
           userId: user.id,
-          userPkId:user.userID,
+          userPkId: user.userID,
           userType: user.userType || userType || null,
-          joiningDate: new Date(), 
+          joiningDate: new Date(),
           parentId: null,
           position: null,
           leftChildId: null,
@@ -3144,13 +3150,18 @@ router.post("/register", (req, res) => {
           token,
           user: {
             id: user.id,
-           
+
             name: user.name,
             role: user.role,
             email: user.email,
-          
+
             phone: user.phone,
             referralCode: user.referralCode,
+            bankAccountNumber: user.bankAccountNumber,
+            ifscCode: user.ifscCode,
+            accountHolderName: user.accountHolderName,
+            panNumber: user.panNumber,
+            upiId: user.upiId,
           },
         });
       }
@@ -3248,12 +3259,17 @@ router.post("/register", (req, res) => {
           id: user.id,
           name: user.name,
           role: user.role,
-           userID: user.userID,
+          userID: user.userID,
           email: user.email,
           phone: user.phone,
-            userType: user.userType,
-            profilePic: user.profilePic,
+          userType: user.userType,
+          profilePic: user.profilePic,
           referralCode: user.referralCode,
+          bankAccountNumber: user.bankAccountNumber,
+          ifscCode: user.ifscCode,
+          accountHolderName: user.accountHolderName,
+          panNumber: user.panNumber,
+          upiId: user.upiId,
         },
       });
     } catch (err) {

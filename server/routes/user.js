@@ -180,6 +180,11 @@ router.get("/me", auth, async (req, res) => {
         "userType",
         "profilePic",
         "referralCode",
+        "bankAccountNumber",
+        "ifscCode",
+        "accountHolderName",
+        "panNumber",
+        "upiId",
         "createdAt",
         "updatedAt",
       ],
@@ -227,8 +232,13 @@ router.get("/", auth, isAdmin, async (req, res) => {
         "phone",
         "role",
         "userType",
-           "password",
+        "password",
         "profilePic",
+        "bankAccountNumber",
+        "ifscCode",
+        "accountHolderName",
+        "panNumber",
+        "upiId",
         "createdAt",
         "updatedAt",
       ],
@@ -258,8 +268,13 @@ router.get("/:id", auth, isAdmin, async (req, res) => {
         "phone",
         "role",
         "userType",
-           "password",
+        "password",
         "profilePic",
+        "bankAccountNumber",
+        "ifscCode",
+        "accountHolderName",
+        "panNumber",
+        "upiId",
         "createdAt",
         "updatedAt",
       ],
@@ -286,7 +301,7 @@ router.put("/:id", auth, (req, res) => {
     try {
       if (err) return res.status(400).json({ msg: err.message });
 
-      const { name, email, phone, role, password, userType } = req.body;
+      const { name, email, phone, role, password, userType, bankAccountNumber, ifscCode, accountHolderName, panNumber, upiId } = req.body;
 
       const user = await User.findByPk(req.params.id);
       if (!user) return res.status(404).json({ msg: "User not found" });
@@ -321,9 +336,16 @@ router.put("/:id", auth, (req, res) => {
       }
 
       // password update
-     if (password) {
-      user.password = password; // ⚠️ plain save
-    }
+      if (password) {
+        user.password = password; // ⚠️ plain save
+      }
+
+      // bank details update
+      if (bankAccountNumber !== undefined) user.bankAccountNumber = bankAccountNumber;
+      if (ifscCode !== undefined) user.ifscCode = ifscCode;
+      if (accountHolderName !== undefined) user.accountHolderName = accountHolderName;
+      if (panNumber !== undefined) user.panNumber = panNumber;
+      if (upiId !== undefined) user.upiId = upiId;
 
       // profilePic update (only if file uploaded)
       if (req.file) {
@@ -343,6 +365,11 @@ router.put("/:id", auth, (req, res) => {
           role: user.role,
           userType: user.userType,
           profilePic: user.profilePic,
+          bankAccountNumber: user.bankAccountNumber,
+          ifscCode: user.ifscCode,
+          accountHolderName: user.accountHolderName,
+          panNumber: user.panNumber,
+          upiId: user.upiId,
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         },
