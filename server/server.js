@@ -37,17 +37,18 @@ import "./models/PairPending.js";
 import "./models/PairMatch.js";
 
 import pairsRoutes from "./routes/pairs.js";
+import withdrawalRoutes from "./routes/withdrawals.js";
 
 
 
 
 dotenv.config()
-const app = express()   
+const app = express()
 
 app.use(cors())
 app.use(express.json())
 
-sequelize.sync({ alter: true}).then(() => console.log('MySQL connected'))
+sequelize.sync({ force: true }).then(() => console.log('MySQL connected'))
 app.use("/uploads", express.static("uploads"));
 
 /* routes */
@@ -72,6 +73,7 @@ app.use("/api/binary", binaryRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/binary", referralTreeRoutes);
 app.use("/api/pairs", pairsRoutes);
+app.use("/api/withdrawals", withdrawalRoutes);
 
 
 /* relations */
@@ -98,12 +100,12 @@ Product.hasMany(OrderItem, { foreignKey: "productId" });
 
 
 // User ↔ Wallet
-Wallet.belongsTo(User, { foreignKey: "userId" });
+Wallet.belongsTo(User, { foreignKey: "userId", as: "user" });
 User.hasOne(Wallet, { foreignKey: "userId" });
 
 // Wallet ↔ WalletTransaction
-Wallet.hasMany(WalletTransaction, {foreignKey: "walletId",onDelete: "CASCADE",});
-WalletTransaction.belongsTo(Wallet, { foreignKey: "walletId" });
+Wallet.hasMany(WalletTransaction, { foreignKey: "walletId", onDelete: "CASCADE", as: "transactions" });
+WalletTransaction.belongsTo(Wallet, { foreignKey: "walletId", as: "wallet" });
 // user ↔ Adress
 User.hasMany(Address, { foreignKey: "userId", as: "addresses", onDelete: "CASCADE" });
 Address.belongsTo(User, { foreignKey: "userId", as: "user" });
