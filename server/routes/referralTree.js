@@ -17,7 +17,6 @@ async function buildTree(rootUserId, depth) {
   for (let lvl = 0; lvl <= maxDepth; lvl++) {
     if (!frontier.length) break;
 
-    // get BinaryNode rows for this frontier
     const nodes = await BinaryNode.findAll({
       where: { userId: frontier },
       attributes: ["userId", "leftChildId", "rightChildId", "parentId", "position"],
@@ -25,16 +24,16 @@ async function buildTree(rootUserId, depth) {
 
     const ids = nodes.map((n) => n.userId);
 
-    // get User rows for this frontier
+    // ✅ include userType here
     const users = await User.findAll({
       where: { id: ids },
-      attributes: ["id", "name", "referralCode"],
+      attributes: ["id", "name", "referralCode", "userType", "role", "profilePic"],
     });
+
     const uMap = new Map(users.map((u) => [u.id, u]));
 
     for (const n of nodes) map.set(n.userId, { node: n, user: uMap.get(n.userId) });
 
-    // prepare next frontier
     const next = [];
     for (const n of nodes) {
       const curLevel = levelMap.get(n.userId) ?? lvl;
@@ -63,6 +62,11 @@ async function buildTree(rootUserId, depth) {
       userId,
       name: u?.name || "—",
       referralCode: u?.referralCode || null,
+
+      // ✅ add these
+      userType: u?.userType || null,
+      role: u?.role || null,
+      profilePic: u?.profilePic || null,
 
       leftUserId: n.leftChildId || null,
       rightUserId: n.rightChildId || null,
