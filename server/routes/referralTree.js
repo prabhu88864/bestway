@@ -9,34 +9,42 @@ const router = express.Router();
 async function buildTree(rootUserId, depth) {
   const maxDepth = Math.max(1, Math.min(Number(depth || 4), 10));
 
-  const map = new Map();      // userId -> { node, user }
-  const levelMap = new Map(); // userId -> level
-  let frontier = [rootUserId];
-  levelMap.set(rootUserId, 0);
+  // 1) root node by userId
+  const rootNode = await BinaryNode.findOne({
+    where: { userId: rootUserId },
+    attributes: ["id", "userId", "leftChildId", "rightChildId"],
+  });
+  if (!rootNode) return null;
+
+  const nodeMap = new Map(); // nodeId -> node
+  const userMap = new Map(); // userId -> user
+  const levelMap = new Map(); // nodeId -> level
+  let frontier = [rootNode.id];
+  levelMap.set(rootNode.id, 0);
 
   for (let lvl = 0; lvl <= maxDepth; lvl++) {
     if (!frontier.length) break;
 
+    // 2) fetch nodes by nodeId (NOT userId)
     const nodes = await BinaryNode.findAll({
-      where: { userId: frontier },
-      attributes: ["userId", "leftChildId", "rightChildId", "parentId", "position"],
+      where: { id: frontier },
+      attributes: ["id", "userId", "leftChildId", "rightChildId"],
     });
 
-    const ids = nodes.map((n) => n.userId);
-
-    // ✅ include userType here
+    // 3) fetch users for these nodes
+    const userIds = nodes.map((n) => n.userId);
     const users = await User.findAll({
-      where: { id: ids },
-      attributes: ["id", "name", "referralCode", "userType", "role", "profilePic"],
+      where: { id: userIds },
+      attributes: ["id", "userID", "name", "referralCode", "userType", "role", "profilePic"],
     });
 
-    const uMap = new Map(users.map((u) => [u.id, u]));
+    for (const n of nodes) nodeMap.set(n.id, n);
+    for (const u of users) userMap.set(u.id, u);
 
-    for (const n of nodes) map.set(n.userId, { node: n, user: uMap.get(n.userId) });
-
+    // 4) prepare next frontier using child nodeIds
     const next = [];
     for (const n of nodes) {
-      const curLevel = levelMap.get(n.userId) ?? lvl;
+      const curLevel = levelMap.get(n.id) ?? lvl;
       if (curLevel >= maxDepth) continue;
 
       if (n.leftChildId && !levelMap.has(n.leftChildId)) {
@@ -51,25 +59,23 @@ async function buildTree(rootUserId, depth) {
     frontier = next;
   }
 
-  const toJson = (userId, curDepth) => {
-    const entry = map.get(userId);
-    if (!entry) return { userId, missing: true, left: null, right: null };
+  const toJson = (nodeId, curDepth) => {
+    const n = nodeMap.get(nodeId);
+    if (!n) return null;
 
-    const u = entry.user;
-    const n = entry.node;
+    const u = userMap.get(n.userId);
 
     const out = {
-      userId,
-      name: u?.name || "—",
-      referralCode: u?.referralCode || null,
+      userPkId: u?.id ?? null,
+      userID: u?.userID ?? null,
+      name: u?.name ?? "—",
+      referralCode: u?.referralCode ?? null,
+      userType: u?.userType ?? null,
+      role: u?.role ?? null,
+      profilePic: u?.profilePic ?? null,
 
-      // ✅ add these
-      userType: u?.userType || null,
-      role: u?.role || null,
-      profilePic: u?.profilePic || null,
-
-      leftUserId: n.leftChildId || null,
-      rightUserId: n.rightChildId || null,
+      leftNodeId: n.leftChildId ?? null,
+      rightNodeId: n.rightChildId ?? null,
 
       left: null,
       right: null,
@@ -83,20 +89,17 @@ async function buildTree(rootUserId, depth) {
     return out;
   };
 
-  return toJson(rootUserId, 0);
+  return toJson(rootNode.id, 0);
 }
 
 // GET /api/binary/tree?depth=4
 router.get("/tree", auth, async (req, res) => {
   try {
     const depth = Number(req.query.depth || 4);
-    const rootUserId = req.user.id;
+    const tree = await buildTree(req.user.id, depth);
+    if (!tree) return res.status(404).json({ msg: "Binary tree not initialized" });
 
-    const rootNode = await BinaryNode.findOne({ where: { userId: rootUserId } });
-    if (!rootNode) return res.status(404).json({ msg: "Binary tree not initialized" });
-
-    const tree = await buildTree(rootUserId, depth);
-    return res.json({ rootUserId, depth: Math.max(1, Math.min(depth, 10)), tree });
+    return res.json({ rootUserId: req.user.id, depth: Math.max(1, Math.min(depth, 10)), tree });
   } catch (err) {
     return res.status(500).json({ msg: err.message });
   }
