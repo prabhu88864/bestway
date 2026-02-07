@@ -2478,6 +2478,7 @@ import PairMatch from "../models/PairMatch.js";
 import { getSettingNumber } from "../config/settings.js";
 import { uploadProfilePic } from "../config/upload.js";
 import { Op } from "sequelize";
+import { checkAndGrantAwards } from "../config/awardRewards.js";
 
 
 
@@ -2904,6 +2905,8 @@ async function updateUplineCountsAndBonuses({
 
 
     await uplineUser.save({ transaction: t });
+    await checkAndGrantAwards({ userId: uplineUser.id, t });
+
 
     // move up
     const currentNode = await BinaryNode.findOne({

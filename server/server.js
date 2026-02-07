@@ -38,6 +38,7 @@ import "./models/PairMatch.js";
 import reportsRoutes from "./routes/reports.js";
 import pairsRoutes from "./routes/pairs.js";
 import withdrawalRoutes from "./routes/withdrawals.js";
+import awardsRoutes from "./routes/awards.js";
 
 
 
@@ -75,6 +76,10 @@ app.use("/api/settings", settingsRoutes);
 app.use("/api/pairs", pairsRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
 app.use("/api/reports", reportsRoutes);
+app.use("/api/awards", awardsRoutes);
+import RankAchievement from "./models/RankAchievement.js";
+import RankSetting from "./models/RankSetting.js";
+
 
 
 
@@ -129,6 +134,9 @@ Referral.belongsTo(User, { foreignKey: "referredUserId", as: "referredUser" });
 
 ReferralEdge.belongsTo(User, { foreignKey: "sponsorId", as: "sponsor" });
 ReferralEdge.belongsTo(User, { foreignKey: "childId", as: "child" });
+
+RankAchievement.belongsTo(User, { foreignKey: "userId" });
+User.hasMany(RankAchievement, { foreignKey: "userId" });
 
 
 
