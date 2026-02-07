@@ -35,11 +35,7 @@ import AppSetting from "./models/AppSetting.js";
 import PairMatch from "./models/PairMatch.js";
 import "./models/PairPending.js";
 import "./models/PairMatch.js";
-
-
 import reportsRoutes from "./routes/reports.js";
-
-
 import pairsRoutes from "./routes/pairs.js";
 import withdrawalRoutes from "./routes/withdrawals.js";
 
