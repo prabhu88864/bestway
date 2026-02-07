@@ -35,6 +35,8 @@ import AppSetting from "./models/AppSetting.js";
 import PairMatch from "./models/PairMatch.js";
 import "./models/PairPending.js";
 import "./models/PairMatch.js";
+import reportsRoutes from "./routes/reports.js";
+
 
 import pairsRoutes from "./routes/pairs.js";
 import withdrawalRoutes from "./routes/withdrawals.js";
@@ -48,7 +50,7 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
-sequelize.sync({ force: true }).then(() => console.log('MySQL connected'))
+sequelize.sync({ alter: true }).then(() => console.log('MySQL connected'))
 app.use("/uploads", express.static("uploads"));
 
 /* routes */
@@ -71,9 +73,11 @@ app.use("/api/referrals", referralRoutes);
 app.use("/api/binary", binaryRoutes);
 // app.use("/api/referrals-tree", referralTreeRoutes);
 app.use("/api/settings", settingsRoutes);
-app.use("/api/binary", referralTreeRoutes);
+// app.use("/api/binary", referralTreeRoutes);
 app.use("/api/pairs", pairsRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
+app.use("/api/reports", reportsRoutes);
+
 
 
 /* relations */
