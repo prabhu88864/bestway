@@ -2734,113 +2734,174 @@ async function updateUplineCountsAndBonuses({
 
     // 3) find FIFO unused left & right
     const leftUnused = await PairPending.findAll({
-      where: { uplineUserId: uplineUser.id, side: "LEFT", isUsed: false },
+    where: { uplineUserId: uplineUser.id, side: "LEFT", isUsed: false, isFlushed: false },
+
       order: [["id", "ASC"]],
       transaction: t,
       lock: t.LOCK.UPDATE,
     });
 
     const rightUnused = await PairPending.findAll({
-      where: { uplineUserId: uplineUser.id, side: "RIGHT", isUsed: false },
+     where: { uplineUserId: uplineUser.id, side: "RIGHT", isUsed: false, isFlushed: false },
+
       order: [["id", "ASC"]],
       transaction: t,
       lock: t.LOCK.UPDATE,
     });
 
-    const canMake = Math.min(leftUnused.length, rightUnused.length);
+  
+
+        const canMake = Math.min(leftUnused.length, rightUnused.length);
 
     if (canMake > 0) {
-      // Build pairs FIFO
-      const pairs = [];
-      for (let i = 0; i < canMake; i++) {
-        pairs.push({ leftP: leftUnused[i], rightP: rightUnused[i] });
-      }
+      const DAILY_PAIR_CEILING =
+        (await getSettingNumber("DAILY_PAIR_CEILING", t)) || 17;
 
-      // fetch names for meta
-      const leftIds = pairs.map((p) => p.leftP.downlineUserId);
-      const rightIds = pairs.map((p) => p.rightP.downlineUserId);
+      // today range (server timezone; if IST, ok)
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
 
-      const [leftUsers, rightUsers] = await Promise.all([
-        User.findAll({
-          where: { id: leftIds },
-          attributes: ["id", "name"],
-          transaction: t,
-        }),
-        User.findAll({
-          where: { id: rightIds },
-          attributes: ["id", "name"],
-          transaction: t,
-        }),
-      ]);
-
-      const leftMap = new Map(leftUsers.map((u) => [u.id, u]));
-      const rightMap = new Map(rightUsers.map((u) => [u.id, u]));
-
-      // create PairMatch rows + mark pendings used
-      const createdMatches = [];
-      for (const p of pairs) {
-        const leftDownId = p.leftP.downlineUserId;
-        const rightDownId = p.rightP.downlineUserId;
-
-        const m = await PairMatch.create(
-          {
-            uplineUserId: uplineUser.id,
-            leftUserId: leftDownId,
-            rightUserId: rightDownId,
-            bonusEach: PAIR_BONUS,
-            amount: PAIR_BONUS,
-            matchedAt: new Date(),
-          },
-          { transaction: t }
-        );
-
-        await p.leftP.update(
-          { isUsed: true, usedInPairMatchId: m.id },
-          { transaction: t }
-        );
-        await p.rightP.update(
-          { isUsed: true, usedInPairMatchId: m.id },
-          { transaction: t }
-        );
-
-        createdMatches.push(m);
-      }
-
-      // ✅ credit wallet (one txn for multiple pairs)
-      // this respects 30k rule for upline + left + right using creditWallet()
-      const txn = await creditWallet({
-        userId: uplineUser.id,
-        amount: canMake * PAIR_BONUS,
-        reason: "PAIR_BONUS",
-        meta: {
-          each: PAIR_BONUS,
-          newPairs: canMake,
-          countsAfter: {
-            left: Number(uplineUser.leftCount || 0),
-            right: Number(uplineUser.rightCount || 0),
-          },
-          triggeredSide: placedPosition,
-          triggeredByUserId: startParentUserId,
-          pairs: createdMatches.map((m) => ({
-            pairMatchId: m.id,
-            leftUserId: m.leftUserId,
-            leftUserName: leftMap.get(m.leftUserId)?.name || null,
-            rightUserId: m.rightUserId,
-            rightUserName: rightMap.get(m.rightUserId)?.name || null,
-            matchedAt: m.matchedAt,
-          })),
+      // how many pairs already matched today
+      const todayCount = await PairMatch.count({
+        where: {
+          uplineUserId: uplineUser.id,
+          matchedAt: { [Op.gte]: start, [Op.lt]: end },
         },
-        t,
+        transaction: t,
+        lock: t.LOCK.UPDATE,
       });
 
-      // link PairMatch -> walletTransactionId (even if pending, we keep the link)
-      for (const m of createdMatches) {
-        await m.update({ walletTransactionId: txn.id }, { transaction: t });
+      const remainingToday = Math.max(
+        0,
+        Number(DAILY_PAIR_CEILING) - Number(todayCount || 0)
+      );
+
+      const allowed = Math.min(canMake, remainingToday);
+      const flushCount = Math.max(0, canMake - allowed);
+
+      // ✅ 1) create only allowed pairs
+      const createdMatches = [];
+      if (allowed > 0) {
+        const pairs = [];
+        for (let i = 0; i < allowed; i++) {
+          pairs.push({ leftP: leftUnused[i], rightP: rightUnused[i] });
+        }
+
+        const leftIds = pairs.map((p) => p.leftP.downlineUserId);
+        const rightIds = pairs.map((p) => p.rightP.downlineUserId);
+
+        const [leftUsers, rightUsers] = await Promise.all([
+          User.findAll({
+            where: { id: leftIds },
+            attributes: ["id", "name"],
+            transaction: t,
+          }),
+          User.findAll({
+            where: { id: rightIds },
+            attributes: ["id", "name"],
+            transaction: t,
+          }),
+        ]);
+
+        const leftMap = new Map(leftUsers.map((u) => [u.id, u]));
+        const rightMap = new Map(rightUsers.map((u) => [u.id, u]));
+
+        for (const p of pairs) {
+          const leftDownId = p.leftP.downlineUserId;
+          const rightDownId = p.rightP.downlineUserId;
+
+          const m = await PairMatch.create(
+            {
+              uplineUserId: uplineUser.id,
+              leftUserId: leftDownId,
+              rightUserId: rightDownId,
+              bonusEach: PAIR_BONUS,
+              amount: PAIR_BONUS,
+              matchedAt: new Date(),
+            },
+            { transaction: t }
+          );
+
+          await p.leftP.update(
+            { isUsed: true, usedInPairMatchId: m.id },
+            { transaction: t }
+          );
+          await p.rightP.update(
+            { isUsed: true, usedInPairMatchId: m.id },
+            { transaction: t }
+          );
+
+          createdMatches.push({
+            row: m,
+            leftName: leftMap.get(m.leftUserId)?.name || null,
+            rightName: rightMap.get(m.rightUserId)?.name || null,
+          });
+        }
+
+        const txn = await creditWallet({
+          userId: uplineUser.id,
+          amount: allowed * PAIR_BONUS,
+          reason: "PAIR_BONUS",
+          meta: {
+            each: PAIR_BONUS,
+            newPairs: allowed,
+            dailyCeiling: DAILY_PAIR_CEILING,
+            todayAlreadyMatched: todayCount,
+            flushedPairs: flushCount,
+            pairs: createdMatches.map((x) => ({
+              pairMatchId: x.row.id,
+              leftUserId: x.row.leftUserId,
+              leftUserName: x.leftName,
+              rightUserId: x.row.rightUserId,
+              rightUserName: x.rightName,
+              matchedAt: x.row.matchedAt,
+            })),
+          },
+          t,
+        });
+
+        for (const x of createdMatches) {
+          await x.row.update({ walletTransactionId: txn.id }, { transaction: t });
+        }
+
+        uplineUser.paidPairs = Number(uplineUser.paidPairs || 0) + allowed;
       }
 
-      // paidPairs = pairs created/processed (not necessarily credited now)
-      uplineUser.paidPairs = Number(uplineUser.paidPairs || 0) + canMake;
+      // ✅ 2) NO carry-forward: flush remaining possible pairs
+      if (flushCount > 0) {
+        const now = new Date();
+
+        for (let i = allowed; i < canMake; i++) {
+          const l = leftUnused[i];
+          const r = rightUnused[i];
+
+          await l.update(
+            {
+              isUsed: true,
+              usedInPairMatchId: null,
+              isFlushed: true,
+              flushedAt: now,
+              flushReason: "DAILY_CEILING",
+            },
+            { transaction: t }
+          );
+
+          await r.update(
+            {
+              isUsed: true,
+              usedInPairMatchId: null,
+              isFlushed: true,
+              flushedAt: now,
+              flushReason: "DAILY_CEILING",
+            },
+            { transaction: t }
+          );
+        }
+      }
     }
+
 
     await uplineUser.save({ transaction: t });
 
