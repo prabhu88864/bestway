@@ -83,7 +83,7 @@ export default function Register() {
       if (referralCode.trim()) fd.append("referralCode", referralCode.trim());
       if (profilePic) fd.append("profilePic", profilePic); // MUST be profilePic
 
-      const res = await fetch("https://pminfotechsolutions.in/api/auth/register", {
+      const res = await fetch("http://localhost:3000/api/auth/register", {
         method: "POST",
         body: fd,
         // ✅ do NOT set Content-Type manually
