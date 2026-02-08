@@ -8,6 +8,7 @@ import Wallet from "../models/Wallet.js";
 import WalletTransaction from "../models/WalletTransaction.js";
 import auth from "../middleware/auth.js";
 import isAdmin from "../middleware/isAdmin.js";
+import { getSettingNumber } from "../utils/appSettings.js";
 
 const router = express.Router();
 
@@ -35,6 +36,17 @@ router.post("/", auth, async (req, res) => {
 
     if (!["BANK", "UPI"].includes(payoutMethod)) {
       throw new Error("payoutMethod must be BANK or UPI");
+    }
+    
+    // ✅ MIN / MAX from settings
+    const MIN_WITHDRAWAL = (await getSettingNumber("MIN_WITHDRAWAL", t)) || 0;
+    const MAX_WITHDRAWAL = (await getSettingNumber("MAX_WITHDRAWAL", t)) || 999999999;
+
+    if (Number(amount) < Number(MIN_WITHDRAWAL)) {
+      throw new Error(`Minimum withdrawal is ₹${MIN_WITHDRAWAL}`);
+    }
+    if (Number(amount) > Number(MAX_WITHDRAWAL)) {
+      throw new Error(`Maximum withdrawal is ₹${MAX_WITHDRAWAL}`);
     }
 
     // Get user details
