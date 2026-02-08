@@ -94,9 +94,30 @@ export default function AdminDashboard() {
         .get("/api/delivery/admin")
         .then((r) => r.data?.total ?? (r.data?.deliveryCharges?.length || 0))
         .catch(() => 0);
+     
+        const withdrawReq = axiosInstance
+        .get("/api/withdraw/admin")
+        .then((r) => r.data?.total ?? (r.data?.withdrawals?.length || 0))
+        .catch(() => 0);
+
+        const awardsReq = axiosInstance
+        .get("/api/awards/admin")
+        .then((r) => r.data?.total ?? (r.data?.awards?.length || 0))
+        .catch(() => 0);
+        
+
+        const achivementReq = axiosInstance
+        .get("/api/achivement/admin")
+        .then((r) => r.data?.total ?? (r.data?.achivements?.length || 0))
+        .catch(() => 0);
+
+        const treeReq = axiosInstance
+        .get("/api/tree/admin")
+        .then((r) => r.data?.total ?? (r.data?.treeData?.length || 0))
+        .catch(() => 0);
 
 
-      const [users, products, orders, banners, addresses,payments, walletTxns, pairs, referal, delivery] = await Promise.all([
+      const [users, products, orders, banners, addresses,payments, walletTxns, pairs, referal, delivery, withdraw, awards, achivements, tree  ] = await Promise.all([
         usersReq,
         productsReq,
         ordersReq,
@@ -107,6 +128,10 @@ export default function AdminDashboard() {
           pairsReq,
           referalReq,
           deliveryReq,
+          withdrawReq,
+          awardsReq,
+          achivementReq,
+          treeReq
 
       ]);
 
@@ -122,6 +147,10 @@ export default function AdminDashboard() {
           pairs,
           referal,
           delivery,
+          withdraw,
+          awards,
+          achivements,
+          tree
       }));
     } catch (e) {
       console.log("fetchCounts error", e);
@@ -188,6 +217,25 @@ export default function AdminDashboard() {
   value={counts.delivery}
   onClick={() => navigate("/admin/delivery")}
 />
+    <StatCard
+  title="Withdrawals"  value={counts.withdraw}
+  onClick={() => navigate("/admin/withdraw")}
+/>
+    <StatCard
+  title="Awards"  value={counts.awards}
+  onClick={() => navigate("/admin/awards")}
+/>
+
+    <StatCard
+  title="Achivements"  value={counts.achivements}
+  onClick={() => navigate("/admin/achivement")}
+/>
+   <StatCard
+  title="Tree"  value={0}
+  onClick={() => navigate("/admin/tree")}
+/>
+
+
       </div>
       
 

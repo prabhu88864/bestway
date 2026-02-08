@@ -21,6 +21,11 @@ import Wallet from "./Pages/Wallet";
 import Order from "./Pages/Order";
 import Referal from "./Pages/Referal"
 import Tree from "./Pages/Tree";
+import Myprofile from "./Pages/Myprofile";
+import AwardsAchivement from "./Pages/AwardsAchivement";
+import ChangePassword from "./Pages/ChangePassword";
+import DailyWise from "./Pages/DailyWise";
+
 
 
 import AdminLogin from "./admin/AdminLogin";
@@ -36,6 +41,10 @@ import AdminWalletTransactions from "./admin/AdminWalletTransactions";
 import AdminPairs from "./admin/AdminPairs";
 import AdminReferal from "./admin/AdminReferal";
 import AdminDelivery from "./admin/AdminDelivery";
+import AdminWithdraw from "./admin/AdminWithdraw";
+import AdminAwards from "./admin/AdminAwards";
+import AdminAchivement from "./admin/AdminAchivement";
+import AdminTree from "./admin/AdminTree";
 
 
 /* ✅ Router inside helper component so we can use useLocation safely */
@@ -101,6 +110,10 @@ function AppRoutes() {
 <Route path="/Order" element={<Order />} />
 <Route path="/Referal" element={<Referal />} />
 <Route path="/Tree" element={<Tree />} />
+<Route path="/Myprofile" element={<Myprofile />} />
+<Route path="/AwardsAchivement" element={<AwardsAchivement />} />
+<Route path="/ChangePassword" element={<ChangePassword />} />
+<Route path="/DailyWise" element={<DailyWise />} />
 
 
 
@@ -116,6 +129,10 @@ function AppRoutes() {
       <Route path="/admin/pairs" element={<AdminPairs />} />
       <Route path="/admin/referal" element={<AdminReferal />} />
       <Route path="/admin/delivery" element={<AdminDelivery />} />
+      <Route path="/admin/withdraw" element={<AdminWithdraw />} />
+      <Route path="/admin/awards" element={<AdminAwards />} />
+      <Route path="/admin/achivement" element={<AdminAchivement />} />
+      <Route path="/admin/tree" element={<AdminTree />} />
        
 
         {/* ============ USER PROTECTED ============ */}

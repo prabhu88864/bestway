@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 
+const USER_TYPES = ["TRAINEE_ENTREPRENEUR", "ENTREPRENEUR"];
+
 export default function AdminUsers() {
   const navigate = useNavigate();
 
@@ -17,15 +19,51 @@ export default function AdminUsers() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [viewLoading, setViewLoading] = useState(false);
 
+  // ✅ NEW: show/hide password in drawer
+  const [viewPwdShow, setViewPwdShow] = useState(false);
+
   // edit modal
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "" });
+  const [editForm, setEditForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    userType: "TRAINEE_ENTREPRENEUR",
+    password: "",
+  });
   const [editSaving, setEditSaving] = useState(false);
+
+  // ✅ NEW: show/hide password in edit modal
+  const [editPwdShow, setEditPwdShow] = useState(false);
+
+  // ✅ NEW: profile pic (file + preview)
+  const [picFile, setPicFile] = useState(null);
+  const [picPreview, setPicPreview] = useState("");
 
   // delete confirm
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteUser, setDeleteUser] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // ✅ helper: build absolute image url (works with /uploads/..)
+  const API_ORIGIN = useMemo(() => {
+    const base = (axiosInstance.defaults.baseURL || "").trim();
+    if (!base) return window.location.origin;
+    try {
+      return new URL(base).origin;
+    } catch {
+      // if baseURL is like "/api"
+      return window.location.origin;
+    }
+  }, []);
+
+  const buildImgUrl = (path) => {
+    if (!path) return "";
+    const p = String(path);
+    if (p.startsWith("http://") || p.startsWith("https://")) return p;
+    if (p.startsWith("/")) return `${API_ORIGIN}${p}`;
+    return `${API_ORIGIN}/${p}`;
+  };
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -85,7 +123,13 @@ export default function AdminUsers() {
       const name = (u.name || "").toLowerCase();
       const email = (u.email || "").toLowerCase();
       const phone = (u.phone || "").toLowerCase();
-      return name.includes(q) || email.includes(q) || phone.includes(q);
+      const userType = (u.userType || "").toLowerCase();
+      return (
+        name.includes(q) ||
+        email.includes(q) ||
+        phone.includes(q) ||
+        userType.includes(q)
+      );
     });
   }, [allUsers, search]);
 
@@ -97,6 +141,7 @@ export default function AdminUsers() {
       setDrawerOpen(true);
       setViewLoading(true);
       setSelectedUser(null);
+      setViewPwdShow(false);
 
       const res = await axiosInstance.get(`/api/users/${id}`);
       setSelectedUser(res.data);
@@ -110,6 +155,7 @@ export default function AdminUsers() {
   const closeView = () => {
     setDrawerOpen(false);
     setSelectedUser(null);
+    setViewPwdShow(false);
   };
 
   // ---------- EDIT (Modal) ----------
@@ -118,14 +164,43 @@ export default function AdminUsers() {
       name: userRow?.name || "",
       email: userRow?.email || "",
       phone: userRow?.phone || "",
+      userType: userRow?.userType || "TRAINEE_ENTREPRENEUR",
+      password: userRow?.password || "", // ✅ show existing (as per your API)
     });
+    setEditPwdShow(false);
+
+    // profile pic reset
+    setPicFile(null);
+    setPicPreview(userRow?.profilePic ? buildImgUrl(userRow.profilePic) : "");
+
     setSelectedUser(userRow);
     setEditOpen(true);
   };
 
   const closeEdit = () => {
     setEditOpen(false);
-    setEditForm({ name: "", email: "", phone: "" });
+    setEditForm({
+      name: "",
+      email: "",
+      phone: "",
+      userType: "TRAINEE_ENTREPRENEUR",
+      password: "",
+    });
+    setEditPwdShow(false);
+    setPicFile(null);
+    setPicPreview("");
+  };
+
+  const onPickPic = (e) => {
+    const file = e.target.files?.[0] || null;
+    setPicFile(file);
+
+    if (!file) {
+      setPicPreview(selectedUser?.profilePic ? buildImgUrl(selectedUser.profilePic) : "");
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPicPreview(url);
   };
 
   const saveEdit = async () => {
@@ -134,11 +209,35 @@ export default function AdminUsers() {
     try {
       setEditSaving(true);
 
-      await axiosInstance.put(`/api/users/${selectedUser.id}`, {
-        name: editForm.name,
-        email: editForm.email,
-        phone: editForm.phone,
-      });
+      const hasFile = !!picFile;
+
+      // ✅ If file exists -> FormData (multipart)
+      if (hasFile) {
+        const fd = new FormData();
+        fd.append("name", editForm.name || "");
+        fd.append("email", editForm.email || "");
+        fd.append("phone", editForm.phone || "");
+        fd.append("userType", editForm.userType || "");
+        if (String(editForm.password || "").trim()) {
+          fd.append("password", String(editForm.password).trim());
+        }
+        fd.append("profilePic", picFile);
+
+        await axiosInstance.put(`/api/users/${selectedUser.id}`, fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      } else {
+        // ✅ else -> JSON
+        const payload = {
+          name: editForm.name,
+          email: editForm.email,
+          phone: editForm.phone,
+          userType: editForm.userType,
+          password: editForm.password, // your API uses plain password, so keep it
+        };
+
+        await axiosInstance.put(`/api/users/${selectedUser.id}`, payload);
+      }
 
       closeEdit();
       fetchUsers(search);
@@ -193,10 +292,15 @@ export default function AdminUsers() {
           style={styles.searchInput}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name / email / phone..."
+          placeholder="Search name / email / phone / userType..."
         />
         {search.trim() ? (
-          <button type="button" style={styles.clearBtn} onClick={() => setSearch("")} title="Clear">
+          <button
+            type="button"
+            style={styles.clearBtn}
+            onClick={() => setSearch("")}
+            title="Clear"
+          >
             ✕
           </button>
         ) : null}
@@ -214,7 +318,8 @@ export default function AdminUsers() {
             <table style={styles.table}>
               <thead>
                 <tr>
-                  {["ID", "Name", "Email", "Phone", "Actions"].map((h) => (
+                  {/* ✅ ADDED columns (no redesign) */}
+                  {["ID", "Pic", "Name", "Email", "Phone", "UserType", "Password", "Actions"].map((h) => (
                     <th key={h} style={styles.th}>
                       {h}
                     </th>
@@ -225,7 +330,7 @@ export default function AdminUsers() {
               <tbody>
                 {users.length === 0 ? (
                   <tr>
-                    <td colSpan={5} style={styles.empty}>
+                    <td colSpan={8} style={styles.empty}>
                       No users found
                     </td>
                   </tr>
@@ -233,9 +338,34 @@ export default function AdminUsers() {
                   users.map((u) => (
                     <tr key={u.id}>
                       <td style={styles.td}>{u.id}</td>
+
+                      {/* ✅ Pic */}
+                      <td style={styles.td}>
+                        {u.profilePic ? (
+                          <img
+                            src={buildImgUrl(u.profilePic)}
+                            alt="pic"
+                            style={styles.avatar}
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <div style={styles.avatarFallback}>👤</div>
+                        )}
+                      </td>
+
                       <td style={styles.td}>{u.name}</td>
                       <td style={styles.td}>{u.email}</td>
                       <td style={styles.td}>{u.phone}</td>
+
+                      {/* ✅ UserType */}
+                      <td style={styles.td}>{u.userType || "-"}</td>
+
+                      {/* ✅ Password (masked, show in view/edit) */}
+                      <td style={styles.td}>
+                        {u.password ? "••••••" : "-"}
+                      </td>
 
                       <td style={styles.td}>
                         <div style={styles.actions}>
@@ -274,11 +404,56 @@ export default function AdminUsers() {
               <div style={styles.info}>Loading...</div>
             ) : selectedUser ? (
               <div style={styles.drawerBody}>
+                {/* ✅ profile pic */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                  {selectedUser.profilePic ? (
+                    <img
+                      src={buildImgUrl(selectedUser.profilePic)}
+                      alt="pic"
+                      style={{ ...styles.avatar, width: 58, height: 58 }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div style={{ ...styles.avatarFallback, width: 58, height: 58 }}>👤</div>
+                  )}
+                  <div>
+                    <div style={{ fontWeight: 800 }}>{selectedUser.name || "-"}</div>
+                    <div style={{ opacity: 0.75, fontSize: 13 }}>{selectedUser.userType || "-"}</div>
+                  </div>
+                </div>
+
                 <Row label="ID" value={selectedUser.id} />
                 <Row label="Name" value={selectedUser.name} />
                 <Row label="Email" value={selectedUser.email} />
                 <Row label="Phone" value={selectedUser.phone} />
                 <Row label="Role" value={selectedUser.role} />
+                <Row label="UserType" value={selectedUser.userType} />
+
+                {/* ✅ password show/hide */}
+                <div style={styles.row}>
+                  <div style={styles.rowLabel}>Password</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={styles.rowValue}>
+                      {selectedUser.password
+                        ? viewPwdShow
+                          ? String(selectedUser.password)
+                          : "••••••••"
+                        : "-"}
+                    </div>
+                    <button
+                      type="button"
+                      style={styles.eyeBtn}
+                      onClick={() => setViewPwdShow((s) => !s)}
+                      disabled={!selectedUser.password}
+                      title={viewPwdShow ? "Hide" : "Show"}
+                    >
+                      {viewPwdShow ? "🙈" : "👁️"}
+                    </button>
+                  </div>
+                </div>
+
                 <Row
                   label="Created"
                   value={selectedUser.createdAt ? new Date(selectedUser.createdAt).toLocaleString() : "-"}
@@ -316,6 +491,18 @@ export default function AdminUsers() {
             </div>
 
             <div style={styles.modalBody}>
+              {/* ✅ Profile Pic upload */}
+              <label style={styles.label}>Profile Pic</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {picPreview ? (
+                  <img src={picPreview} alt="preview" style={{ ...styles.avatar, width: 52, height: 52 }} />
+                ) : (
+                  <div style={{ ...styles.avatarFallback, width: 52, height: 52 }}>👤</div>
+                )}
+
+                <input type="file" accept="image/*" onChange={onPickPic} />
+              </div>
+
               <label style={styles.label}>Name</label>
               <input
                 style={styles.modalInput}
@@ -336,6 +523,39 @@ export default function AdminUsers() {
                 value={editForm.phone}
                 onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
               />
+
+              {/* ✅ UserType */}
+              <label style={styles.label}>User Type</label>
+              <select
+                style={styles.modalInput}
+                value={editForm.userType}
+                onChange={(e) => setEditForm({ ...editForm, userType: e.target.value })}
+              >
+                {USER_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+
+              {/* ✅ Password (show/hide) */}
+              <label style={styles.label}>Password</label>
+              <div style={styles.pwdWrap}>
+                <input
+                  style={styles.pwdInput}
+                  type={editPwdShow ? "text" : "password"}
+                  value={editForm.password}
+                  onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                />
+                <button
+                  type="button"
+                  style={styles.eyeBtn}
+                  onClick={() => setEditPwdShow((s) => !s)}
+                  title={editPwdShow ? "Hide" : "Show"}
+                >
+                  {editPwdShow ? "🙈" : "👁️"}
+                </button>
+              </div>
 
               <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
                 <button style={styles.btn} onClick={closeEdit} disabled={editSaving}>
@@ -412,7 +632,7 @@ const styles = {
 
   table: { width: "100%", borderCollapse: "collapse" },
   th: { textAlign: "left", padding: "10px 8px", borderBottom: "1px solid #eee", fontSize: 13, color: "#444" },
-  td: { padding: "10px 8px", borderBottom: "1px solid #f2f2f2" },
+  td: { padding: "10px 8px", borderBottom: "1px solid #f2f2f2", verticalAlign: "top" },
   empty: { padding: 16, textAlign: "center", color: "#666" },
 
   actions: { display: "flex", gap: 8, flexWrap: "wrap" },
@@ -439,4 +659,38 @@ const styles = {
 
   // confirm
   confirm: { width: 420, maxWidth: "95vw", background: "#fff", borderRadius: 12, padding: 16, boxShadow: "0 8px 24px rgba(0,0,0,0.18)" },
+
+  // ✅ new small style additions only
+  avatar: { width: 34, height: 34, borderRadius: 10, objectFit: "cover", border: "1px solid #eee" },
+  avatarFallback: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px solid #eee",
+    background: "#fafafa",
+  },
+
+  pwdWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    border: "1px solid #ddd",
+    borderRadius: 8,
+    padding: "6px 8px",
+    background: "#fff",
+  },
+  pwdInput: { flex: 1, border: "none", outline: "none", fontSize: 14, padding: "8px 6px", background: "transparent" },
+  eyeBtn: { padding: "8px 10px", cursor: "pointer", borderRadius: 8, border: "1px solid #ddd", background: "#fff", lineHeight: 1 },
+
+  primaryBtn: {
+    padding: "10px 12px",
+    cursor: "pointer",
+    borderRadius: 10,
+    border: "1px solid #ddd",
+    background: "#f7f7f7",
+    fontWeight: 800,
+  },
 };

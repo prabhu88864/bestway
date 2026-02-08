@@ -2,48 +2,44 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 
+/* ===================== ALL SETTINGS KEYS ===================== */
 const SETTING_OPTIONS = [
-  { key: "JOIN_BONUS", label: "Joining Bonus (₹)", type: "number", hint: "Example: 5000" },
-  { key: "MIN_SPEND_UNLOCK", label: "Min Spend Unlock (₹)", type: "number", hint: "Example: 50000" },
-  { key: "PAIR_BONUS", label: "Pair Bonus (₹)", type: "number", hint: "Example: 3000" },
+  { key: "JOIN_BONUS", label: "Joining Bonus (₹)", type: "number" },
+  { key: "MIN_SPEND_UNLOCK", label: "Min Spend Unlock (₹)", type: "number" },
+  { key: "PAIR_BONUS", label: "Pair Bonus (₹)", type: "number" },
+
+  { key: "DAILY_PAIR_CEILING", label: "Daily Pair Ceiling", type: "number" },
+  { key: "MIN_WITHDRAWAL", label: "Minimum Withdrawal (₹)", type: "number" },
+  { key: "MAX_WITHDRAWAL", label: "Maximum Withdrawal (₹)", type: "number" },
+
+  { key: "ADMIN_FEE_PERCENT", label: "Admin Fee (%)", type: "number" },
+  { key: "GST_PERCENT", label: "GST (%)", type: "number" },
 ];
 
 export default function AdminSettings() {
   const navigate = useNavigate();
 
-  // list
-  const [allSettings, setAllSettings] = useState([]);
+  const [settings, setSettings] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // drawer view
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [viewLoading, setViewLoading] = useState(false);
-
-  // modal
   const [modalOpen, setModalOpen] = useState(false);
-  const [mode, setMode] = useState("EDIT"); // EDIT | ADD_CUSTOM
   const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ key: "", value: "" });
 
-  const [form, setForm] = useState({ key: "JOIN_BONUS", value: "" });
-
-  // ✅ token + auth headers
   const token = useMemo(
-    () => localStorage.getItem("token") || localStorage.getItem("authToken") || "",
+    () => localStorage.getItem("token") || localStorage.getItem("authToken"),
     []
   );
 
-  const authHeaders = useMemo(
-    () => (token ? { Authorization: `Bearer ${token}` } : {}),
+  const headers = useMemo(
+    () => ({ Authorization: `Bearer ${token}` }),
     [token]
   );
 
-  // auth + load
+  /* ===================== AUTH CHECK ===================== */
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem("user") || "null");
-    const role = (user?.role || "").toUpperCase();
-
-    if (!token || role !== "ADMIN") {
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    if (!token || user.role !== "ADMIN") {
       navigate("/admin", { replace: true });
       return;
     }
@@ -51,396 +47,178 @@ export default function AdminSettings() {
     // eslint-disable-next-line
   }, []);
 
-  /* ================== API ================== */
+  /* ===================== FETCH ===================== */
   const fetchSettings = async () => {
     try {
       setLoading(true);
       const res = await axiosInstance.get("/api/settings", {
-        headers: authHeaders,
+        headers,
         params: { _ts: Date.now() },
       });
-      setAllSettings(Array.isArray(res.data) ? res.data : []);
+      setSettings(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      console.log("GET /api/settings error", err);
-      if (err?.response?.status === 401 || err?.response?.status === 403) {
-        navigate("/admin", { replace: true });
-      }
+      console.error("fetchSettings error", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const openView = async (row) => {
-    try {
-      setDrawerOpen(true);
-      setViewLoading(true);
-      setSelected(null);
-
-      const res = await axiosInstance.get(`/api/settings/${row.key}`, {
-        headers: authHeaders,
-        params: { _ts: Date.now() },
-      });
-
-      const value = res?.data?.value ?? row?.value ?? "";
-      setSelected({ ...row, value });
-    } catch (err) {
-      console.log("GET /api/settings/:key error", err);
-      setSelected(row);
-    } finally {
-      setViewLoading(false);
-    }
-  };
-
-  const closeView = () => {
-    setDrawerOpen(false);
-    setSelected(null);
-  };
-
-  const openEdit = async (key) => {
-    try {
-      setMode("EDIT");
-      setModalOpen(true);
-      setSaving(false);
-
-      const res = await axiosInstance.get(`/api/settings/${key}`, {
-        headers: authHeaders,
-        params: { _ts: Date.now() },
-      });
-
-      const value = res?.data?.value ?? "";
-      setForm({ key, value: String(value ?? "") });
-    } catch (err) {
-      console.log("openEdit load error", err);
-      const fromList = allSettings.find((s) => s.key === key);
-      setForm({ key, value: String(fromList?.value ?? "") });
-    }
-  };
-
-  const openQuickEditFromRow = (row) => {
-    setMode("EDIT");
-    setForm({ key: row.key, value: String(row.value ?? "") });
+  /* ===================== OPEN EDIT ===================== */
+  const openEdit = (key) => {
+    const existing = settings.find((s) => s.key === key);
+    setForm({
+      key,
+      value: existing?.value ?? "",
+    });
     setModalOpen(true);
-    setSaving(false);
   };
 
-  const openAddCustom = () => {
-    setMode("ADD_CUSTOM");
-    setForm({ key: "", value: "" });
-    setModalOpen(true);
-    setSaving(false);
-  };
-
-  const closeModal = () => {
-    if (saving) return;
-    setModalOpen(false);
-    setSaving(false);
-  };
-
+  /* ===================== SAVE (POST OR PUT) ===================== */
   const saveSetting = async () => {
-    const k = String(form.key || "").trim().toUpperCase();
-    const v = String(form.value ?? "").trim();
+    const key = form.key.trim().toUpperCase();
+    const value = String(form.value).trim();
 
-    if (!k) return alert("Key required");
-    if (v === "") return alert("Value required");
+    if (!key || value === "") {
+      alert("Key & value required");
+      return;
+    }
 
-    // numeric validate for known keys
-    const known = SETTING_OPTIONS.find((x) => x.key === k);
-    if (known?.type === "number") {
-      const n = Number(v);
-      if (Number.isNaN(n)) return alert("Value must be a number");
-      if (n < 0) return alert("Value must be >= 0");
+    if (Number.isNaN(Number(value))) {
+      alert("Value must be a number");
+      return;
     }
 
     try {
       setSaving(true);
 
-      if (mode === "EDIT") {
-        // ✅ PUT /api/settings/:key   body: { value }
-        const res = await axiosInstance.put(
-          `/api/settings/${k}`,
-          { value: v },
-          { headers: { ...authHeaders, "Content-Type": "application/json" } }
+      const exists = settings.find((s) => s.key === key);
+
+      if (exists) {
+        // ✅ UPDATE
+        await axiosInstance.put(
+          `/api/settings/${key}`,
+          { value },
+          { headers }
         );
-
-        // backend returns: { msg:"Updated", setting:{...} }
-        const updatedSetting = res?.data?.setting;
-
-        // ✅ update list instantly with updatedAt from response
-        setAllSettings((prev) => {
-          const exists = prev.find((x) => x.key === k);
-          if (!exists) {
-            // if somehow missing, add it
-            return [
-              {
-                id: updatedSetting?.id ?? Date.now(),
-                key: k,
-                value: v,
-                createdAt: updatedSetting?.createdAt ?? new Date().toISOString(),
-                updatedAt: updatedSetting?.updatedAt ?? new Date().toISOString(),
-              },
-              ...prev,
-            ];
-          }
-          return prev.map((x) =>
-            x.key === k
-              ? {
-                  ...x,
-                  value: updatedSetting?.value ?? v,
-                  updatedAt: updatedSetting?.updatedAt ?? new Date().toISOString(),
-                }
-              : x
-          );
-        });
-
-        // drawer opened same key? update it also
-        setSelected((prev) => {
-          if (!prev || prev.key !== k) return prev;
-          return {
-            ...prev,
-            value: updatedSetting?.value ?? v,
-            updatedAt: updatedSetting?.updatedAt ?? new Date().toISOString(),
-          };
-        });
       } else {
-        // ✅ ADD CUSTOM uses POST /api/settings { key, value }
+        // ✅ CREATE
         await axiosInstance.post(
           "/api/settings",
-          { key: k, value: v },
-          { headers: { ...authHeaders, "Content-Type": "application/json" } }
+          { key, value },
+          { headers }
         );
       }
 
-      // ✅ force refresh (server truth)
       await fetchSettings();
-
       setModalOpen(false);
     } catch (err) {
-      console.log("saveSetting error", err);
-      alert(err?.response?.data?.msg || err?.response?.data?.message || "Save failed");
+      console.error("saveSetting error", err);
+      alert(err?.response?.data?.message || "Save failed");
     } finally {
       setSaving(false);
     }
   };
 
-  const prettyLabel = useMemo(() => {
-    const found = SETTING_OPTIONS.find((x) => x.key === String(form.key || "").toUpperCase());
-    return found?.label || "Key";
-  }, [form.key]);
-
+  /* ===================== UI ===================== */
   return (
     <div style={styles.page}>
-      {/* Topbar */}
       <div style={styles.topbar}>
-        <h2 style={styles.title}>App Settings</h2>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={() => navigate("/admin/dashboard")} style={styles.btn}>
-            ← Dashboard
-          </button>
-          <button onClick={openAddCustom} style={styles.btn}>
-            + Add Custom Key
-          </button>
-        </div>
+        <h2 style={styles.title}>Admin Settings</h2>
+        <button style={styles.btn} onClick={fetchSettings}>
+          Refresh
+        </button>
       </div>
 
-      {/* Quick cards */}
-      <div style={styles.quickGrid}>
-        {SETTING_OPTIONS.map((s) => {
-          const row = allSettings.find((x) => x.key === s.key);
+      {/* QUICK CARDS */}
+      <div style={styles.grid}>
+        {SETTING_OPTIONS.map((opt) => {
+          const row = settings.find((s) => s.key === opt.key);
           return (
-            <div key={s.key} style={styles.quickCard}>
-              <div style={styles.quickTop}>
+            <div key={opt.key} style={styles.card}>
+              <div style={styles.cardTop}>
                 <div>
-                  <div style={styles.quickTitle}>{s.label}</div>
-                  <div style={styles.quickKey}>{s.key}</div>
+                  <div style={styles.cardTitle}>{opt.label}</div>
+                  <div style={styles.cardKey}>{opt.key}</div>
                 </div>
-                <button style={styles.primaryBtn} onClick={() => openEdit(s.key)}>
+                <button
+                  style={styles.primaryBtn}
+                  onClick={() => openEdit(opt.key)}
+                >
                   Edit
                 </button>
               </div>
 
-              <div style={styles.quickValue}>
-                {row?.value != null && row?.value !== "" ? (
-                  <span>
-                    ₹ <b>{row.value}</b>
-                  </span>
-                ) : (
-                  <span style={{ color: "#777" }}>Not set</span>
-                )}
+              <div style={styles.cardValue}>
+                {row ? row.value : <span style={{ color: "#777" }}>Not set</span>}
               </div>
 
-              <div style={styles.quickHint}>{s.hint}</div>
-              <div style={styles.quickUpdated}>
+              <div style={styles.cardDate}>
                 Updated:{" "}
-                <b>{row?.updatedAt ? new Date(row.updatedAt).toLocaleString() : "—"}</b>
+                {row?.updatedAt
+                  ? new Date(row.updatedAt).toLocaleString()
+                  : "—"}
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Table */}
-      <div style={styles.card}>
+      {/* TABLE */}
+      <div style={styles.tableWrap}>
         {loading ? (
-          <div style={styles.info}>Loading...</div>
+          <div>Loading…</div>
         ) : (
-          <>
-            <div style={styles.meta}>
-              Total Keys: <b>{allSettings.length}</b>
-            </div>
-
-            <div style={{ overflowX: "auto" }}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    {["ID", "Key", "Value", "Updated At", "Actions"].map((h) => (
-                      <th key={h} style={styles.th}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {allSettings.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} style={styles.empty}>
-                        No settings found
-                      </td>
-                    </tr>
-                  ) : (
-                    allSettings.map((s) => (
-                      <tr key={s.id || s.key}>
-                        <td style={styles.td}>{s.id ?? "-"}</td>
-                        <td style={styles.td}>
-                          <div style={{ fontWeight: 900 }}>{s.key}</div>
-                        </td>
-                        <td style={styles.td}>{s.value ?? "-"}</td>
-                        <td style={styles.td}>
-                          {s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "-"}
-                        </td>
-                        <td style={styles.td}>
-                          <div style={styles.actions}>
-                            <button style={styles.actionBtn} onClick={() => openView(s)}>
-                              View
-                            </button>
-                            <button style={styles.actionBtn} onClick={() => openQuickEditFromRow(s)}>
-                              Edit
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Key</th>
+                <th>Value</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {settings.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.id}</td>
+                  <td>{s.key}</td>
+                  <td>{s.value}</td>
+                  <td>{new Date(s.updatedAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
-      {/* DRAWER */}
-      {drawerOpen && (
-        <div style={styles.drawerOverlay} onClick={closeView}>
-          <div style={styles.drawer} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.drawerHeader}>
-              <h3 style={{ margin: 0 }}>Setting Details</h3>
-              <button style={styles.btnSmall} onClick={closeView}>
-                ✕
-              </button>
-            </div>
-
-            {viewLoading ? (
-              <div style={styles.info}>Loading...</div>
-            ) : selected ? (
-              <div style={styles.drawerBody}>
-                <Row label="ID" value={selected.id} />
-                <Row label="Key" value={selected.key} />
-                <Row label="Value" value={selected.value} />
-                <Row
-                  label="Updated"
-                  value={selected.updatedAt ? new Date(selected.updatedAt).toLocaleString() : "-"}
-                />
-
-                <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-                  <button style={styles.primaryBtn} onClick={() => openQuickEditFromRow(selected)}>
-                    Edit
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div style={styles.info}>No data</div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* MODAL */}
       {modalOpen && (
-        <div style={styles.modalOverlay} onClick={closeModal}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h3 style={{ margin: 0 }}>
-                {mode === "ADD_CUSTOM" ? "Add Custom Setting" : `Edit: ${prettyLabel}`}
-              </h3>
-              <button style={styles.btnSmall} onClick={closeModal} disabled={saving}>
-                ✕
-              </button>
-            </div>
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <h3>Edit Setting</h3>
 
-            <div style={styles.modalBody}>
-              <div style={styles.grid}>
-                <Field label={mode === "ADD_CUSTOM" ? "Key *" : "Key"}>
-                  {mode === "ADD_CUSTOM" ? (
-                    <input
-                      style={styles.modalInput}
-                      value={form.key}
-                      onChange={(e) => setForm({ ...form, key: e.target.value })}
-                      placeholder="EX: DOWNLINE_PAIR_BONUS"
-                      disabled={saving}
-                    />
-                  ) : (
-                    <select
-                      style={styles.modalInput}
-                      value={form.key}
-                      onChange={(e) => setForm({ ...form, key: e.target.value })}
-                      disabled={saving}
-                    >
-                      {SETTING_OPTIONS.map((s) => (
-                        <option key={s.key} value={s.key}>
-                          {s.key}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </Field>
+            <label>Key</label>
+            <input value={form.key} disabled style={styles.input} />
 
-                <Field label="Value *">
-                  <input
-                    style={styles.modalInput}
-                    value={form.value}
-                    onChange={(e) => setForm({ ...form, value: e.target.value })}
-                    placeholder="Example: 6000"
-                    disabled={saving}
-                  />
-                </Field>
+            <label>Value</label>
+            <input
+              value={form.value}
+              onChange={(e) =>
+                setForm({ ...form, value: e.target.value })
+              }
+              style={styles.input}
+            />
 
-                <div style={{ gridColumn: "1 / -1", marginTop: 4 }}>
-                  <div style={styles.note}>
-                    ✅ Update API: <b>PUT /api/settings/:key</b> with{" "}
-                    <code style={styles.code}>{"{ value }"}</code>
-                    <br />
-                    ✅ List API: <b>GET /api/settings</b>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div style={styles.modalFooter}>
-              <button style={styles.btn} onClick={closeModal} disabled={saving}>
+            <div style={styles.modalActions}>
+              <button onClick={() => setModalOpen(false)} style={styles.btn}>
                 Cancel
               </button>
-              <button style={styles.primaryBtn} onClick={saveSetting} disabled={saving}>
-                {saving ? "Saving..." : "Save"}
+              <button
+                onClick={saveSetting}
+                disabled={saving}
+                style={styles.primaryBtn}
+              >
+                {saving ? "Saving…" : "Save"}
               </button>
             </div>
           </div>
@@ -450,121 +228,76 @@ export default function AdminSettings() {
   );
 }
 
-/* helpers */
-function Row({ label, value }) {
-  return (
-    <div style={styles.row}>
-      <div style={styles.rowLabel}>{label}</div>
-      <div style={styles.rowValue}>{value || "-"}</div>
-    </div>
-  );
-}
-function Field({ label, children }) {
-  return (
-    <div>
-      <label style={styles.label}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-/* styles */
+/* ===================== STYLES ===================== */
 const styles = {
-  page: { padding: 22, background: "#f4f6f8", minHeight: "100vh" },
-  topbar: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  title: { margin: 0, fontSize: 34, fontWeight: 800, letterSpacing: -0.5 },
+  page: { padding: 24, background: "#f4f6f8", minHeight: "100vh" },
+  topbar: { display: "flex", justifyContent: "space-between", marginBottom: 16 },
+  title: { margin: 0, fontSize: 28 },
+
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))",
+    gap: 14,
+    marginBottom: 20,
+  },
+
+  card: {
+    background: "#fff",
+    borderRadius: 14,
+    padding: 14,
+    boxShadow: "0 8px 22px rgba(0,0,0,.1)",
+  },
+  cardTop: { display: "flex", justifyContent: "space-between" },
+  cardTitle: { fontWeight: 800 },
+  cardKey: { fontSize: 12, color: "#666" },
+  cardValue: { marginTop: 10, fontSize: 22, fontWeight: 900 },
+  cardDate: { marginTop: 6, fontSize: 12, color: "#666" },
 
   btn: {
-    padding: "12px 14px",
-    cursor: "pointer",
+    padding: "10px 14px",
     borderRadius: 10,
-    border: "1px solid #cfcfcf",
-    background: "#f3f3f3",
-    fontSize: 14,
-  },
-  btnSmall: {
-    padding: "8px 10px",
+    border: "1px solid #ccc",
+    background: "#eee",
     cursor: "pointer",
-    borderRadius: 10,
-    border: "1px solid #cfcfcf",
-    background: "#f3f3f3",
-    fontSize: 13,
   },
   primaryBtn: {
-    padding: "12px 16px",
-    cursor: "pointer",
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "none",
     background: "#111",
     color: "#fff",
-    border: "none",
-    borderRadius: 10,
-    fontSize: 14,
+    cursor: "pointer",
   },
 
-  quickGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 12,
-    marginBottom: 12,
-  },
-  quickCard: {
+  tableWrap: {
     background: "#fff",
-    borderRadius: 16,
     padding: 14,
-    boxShadow: "0 10px 26px rgba(0,0,0,0.10)",
-    border: "1px solid rgba(0,0,0,0.06)",
+    borderRadius: 14,
+    boxShadow: "0 8px 22px rgba(0,0,0,.1)",
   },
-  quickTop: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 },
-  quickTitle: { fontSize: 14, fontWeight: 900, color: "#111" },
-  quickKey: { fontSize: 12, color: "#666", marginTop: 2 },
-  quickValue: { marginTop: 10, fontSize: 20, fontWeight: 900, letterSpacing: -0.3 },
-  quickHint: { marginTop: 6, fontSize: 12, color: "#666" },
-  quickUpdated: { marginTop: 8, fontSize: 12, color: "#555" },
+  table: { width: "100%", borderCollapse: "collapse" },
 
-  card: { background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 10px 26px rgba(0,0,0,0.10)" },
-  info: { padding: 10, fontSize: 14 },
-  meta: { marginBottom: 10, color: "#222", fontSize: 16 },
-
-  table: { width: "100%", borderCollapse: "collapse", minWidth: 860 },
-  th: { textAlign: "left", padding: "12px 8px", borderBottom: "1px solid #eee", fontSize: 14, color: "#333", whiteSpace: "nowrap" },
-  td: { padding: "14px 8px", borderBottom: "1px solid #f0f0f0", fontSize: 14, verticalAlign: "middle" },
-  empty: { padding: 16, textAlign: "center", color: "#666", fontSize: 14 },
-
-  actions: { display: "flex", gap: 10, flexWrap: "wrap" },
-  actionBtn: { padding: "9px 12px", cursor: "pointer", borderRadius: 10, border: "1px solid #ddd", background: "#fff", fontSize: 13 },
-
-  drawerOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", display: "flex", justifyContent: "flex-end", zIndex: 50 },
-  drawer: { width: 420, maxWidth: "92vw", height: "100%", background: "#fff", padding: 14, boxShadow: "-10px 0 24px rgba(0,0,0,0.14)" },
-  drawerHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 10, borderBottom: "1px solid #eee" },
-  drawerBody: { paddingTop: 12 },
-
-  row: { display: "grid", gridTemplateColumns: "120px 1fr", gap: 10, padding: "10px 0", borderBottom: "1px dashed #f0f0f0" },
-  rowLabel: { color: "#666", fontSize: 12 },
-  rowValue: { color: "#111", fontWeight: 700, fontSize: 13, wordBreak: "break-word" },
-
-  modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 },
-  modal: { width: 720, maxWidth: "96vw", background: "#fff", borderRadius: 16, boxShadow: "0 14px 32px rgba(0,0,0,0.18)", display: "flex", flexDirection: "column" },
-  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: 14, borderBottom: "1px solid #eee" },
-  modalBody: { padding: 14, maxHeight: "70vh", overflowY: "auto" },
-  modalFooter: { padding: 14, borderTop: "1px solid #eee", display: "flex", justifyContent: "flex-end", gap: 10, background: "#fff", position: "sticky", bottom: 0 },
-
-  grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-  label: { display: "block", fontSize: 12, color: "#666", marginBottom: 6 },
-  modalInput: { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", outline: "none", fontSize: 14 },
-
-  note: {
-    background: "#f7f7f7",
-    border: "1px solid #eee",
-    padding: 10,
-    borderRadius: 12,
-    fontSize: 12,
-    color: "#444",
-    lineHeight: 1.45,
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,.3)",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  code: {
+  modal: {
     background: "#fff",
-    border: "1px solid #e7e7e7",
-    padding: "2px 6px",
-    borderRadius: 8,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    padding: 20,
+    borderRadius: 14,
+    width: 360,
   },
+  input: {
+    width: "100%",
+    padding: 10,
+    marginTop: 6,
+    marginBottom: 12,
+    borderRadius: 8,
+    border: "1px solid #ccc",
+  },
+  modalActions: { display: "flex", justifyContent: "flex-end", gap: 10 },
 };

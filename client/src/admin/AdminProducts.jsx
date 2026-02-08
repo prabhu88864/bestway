@@ -52,7 +52,7 @@ export default function AdminProducts() {
       navigate("/admin", { replace: true });
       return;
     }
-    fetchProducts(""); // initial load (no search)
+    fetchProducts("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -167,6 +167,10 @@ export default function AdminProducts() {
         price: p?.price ?? "",
         stockQty: p?.stockQty ?? "",
         featured: !!p?.featured,
+
+        // ✅ NEW FIELDS (percent)
+        entrepreneurDiscount: p?.entrepreneurDiscount ?? 0,
+        traineeEntrepreneurDiscount: p?.traineeEntrepreneurDiscount ?? 0,
       });
 
       setFiles([]);
@@ -183,12 +187,24 @@ export default function AdminProducts() {
     setFiles([]);
   };
 
+  const clampPct = (v) => {
+    const n = Number(v);
+    if (Number.isNaN(n)) return 0;
+    if (n < 0) return 0;
+    if (n > 100) return 100;
+    return n;
+  };
+
   const saveProduct = async () => {
     try {
       if (!form.name.trim()) return alert("Product name required");
       if (form.mrp === "" || isNaN(Number(form.mrp))) return alert("Valid MRP required");
       if (form.price === "" || isNaN(Number(form.price))) return alert("Valid Price required");
       if (files.length > 4) return alert("Max 4 images allowed");
+
+      // ✅ Validate discounts (0..100)
+      const entDisc = clampPct(form.entrepreneurDiscount);
+      const trDisc = clampPct(form.traineeEntrepreneurDiscount);
 
       setSaving(true);
 
@@ -205,6 +221,10 @@ export default function AdminProducts() {
       fd.append("price", String(form.price));
       fd.append("stockQty", String(form.stockQty || 0));
       fd.append("featured", form.featured ? "true" : "false");
+
+      // ✅ NEW FIELDS
+      fd.append("entrepreneurDiscount", String(entDisc));
+      fd.append("traineeEntrepreneurDiscount", String(trDisc));
 
       files.forEach((f) => fd.append("images", f));
 
@@ -278,12 +298,7 @@ export default function AdminProducts() {
           placeholder="Search name / sku / category / brand / manufacturer..."
         />
         {search.trim() ? (
-          <button
-            type="button"
-            style={styles.clearBtn}
-            onClick={() => setSearch("")}
-            title="Clear"
-          >
+          <button type="button" style={styles.clearBtn} onClick={() => setSearch("")} title="Clear">
             ✕
           </button>
         ) : null}
@@ -312,6 +327,8 @@ export default function AdminProducts() {
                       "MRP",
                       "Price",
                       "Stock",
+                      "Ent Disc %",
+                      "Trainee Disc %",
                       "Badge",
                       "Featured",
                       "Actions",
@@ -326,7 +343,7 @@ export default function AdminProducts() {
                 <tbody>
                   {products.length === 0 ? (
                     <tr>
-                      <td colSpan={11} style={styles.empty}>
+                      <td colSpan={13} style={styles.empty}>
                         No products found
                       </td>
                     </tr>
@@ -372,6 +389,17 @@ export default function AdminProducts() {
                           <td style={styles.td}>{p.mrp != null ? `₹${p.mrp}` : "-"}</td>
                           <td style={styles.td}>{p.price != null ? `₹${p.price}` : "-"}</td>
                           <td style={styles.td}>{p.stockQty ?? 0}</td>
+
+                          {/* ✅ NEW FIELDS */}
+                          <td style={styles.td}>
+                            {p.entrepreneurDiscount != null ? `${p.entrepreneurDiscount}%` : "0%"}
+                          </td>
+                          <td style={styles.td}>
+                            {p.traineeEntrepreneurDiscount != null
+                              ? `${p.traineeEntrepreneurDiscount}%`
+                              : "0%"}
+                          </td>
+
                           <td style={styles.td}>{p.badge || "-"}</td>
                           <td style={styles.td}>{p.featured ? "Yes" : "No"}</td>
 
@@ -435,6 +463,25 @@ export default function AdminProducts() {
                 <Row label="MRP" value={selectedProduct.mrp != null ? `₹${selectedProduct.mrp}` : "-"} />
                 <Row label="Price" value={selectedProduct.price != null ? `₹${selectedProduct.price}` : "-"} />
                 <Row label="Stock" value={selectedProduct.stockQty ?? 0} />
+
+                {/* ✅ NEW FIELDS */}
+                <Row
+                  label="Entrepreneur Discount"
+                  value={
+                    selectedProduct.entrepreneurDiscount != null
+                      ? `${selectedProduct.entrepreneurDiscount}%`
+                      : "0%"
+                  }
+                />
+                <Row
+                  label="Trainee Discount"
+                  value={
+                    selectedProduct.traineeEntrepreneurDiscount != null
+                      ? `${selectedProduct.traineeEntrepreneurDiscount}%`
+                      : "0%"
+                  }
+                />
+
                 <Row label="Featured" value={selectedProduct.featured ? "Yes" : "No"} />
                 <Row label="Description" value={selectedProduct.description} />
 
@@ -558,6 +605,35 @@ export default function AdminProducts() {
                   />
                 </Field>
 
+                {/* ✅ NEW FIELDS IN MODAL */}
+                <Field label="Entrepreneur Discount (%)">
+                  <input
+                    style={styles.modalInput}
+                    value={form.entrepreneurDiscount}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        entrepreneurDiscount: e.target.value,
+                      })
+                    }
+                    placeholder="0 - 100"
+                  />
+                </Field>
+
+                <Field label="Trainee Entrepreneur Discount (%)">
+                  <input
+                    style={styles.modalInput}
+                    value={form.traineeEntrepreneurDiscount}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        traineeEntrepreneurDiscount: e.target.value,
+                      })
+                    }
+                    placeholder="0 - 100"
+                  />
+                </Field>
+
                 <div style={{ gridColumn: "1 / -1" }}>
                   <label style={styles.label}>Description</label>
                   <textarea
@@ -668,6 +744,10 @@ function getEmptyForm() {
     price: "",
     stockQty: "",
     featured: false,
+
+    // ✅ NEW FIELDS
+    entrepreneurDiscount: 0,
+    traineeEntrepreneurDiscount: 0,
   };
 }
 
@@ -755,7 +835,7 @@ const styles = {
   info: { padding: 10, fontSize: 14 },
   meta: { marginBottom: 10, color: "#222", fontSize: 16 },
 
-  table: { width: "100%", borderCollapse: "collapse", minWidth: 1100 },
+  table: { width: "100%", borderCollapse: "collapse", minWidth: 1280 },
   th: { textAlign: "left", padding: "12px 8px", borderBottom: "1px solid #eee", fontSize: 14, color: "#333", whiteSpace: "nowrap" },
   td: { padding: "14px 8px", borderBottom: "1px solid #f0f0f0", fontSize: 14, verticalAlign: "middle" },
   empty: { padding: 16, textAlign: "center", color: "#666", fontSize: 14 },
@@ -789,7 +869,7 @@ const styles = {
   drawerImgsWrap: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 },
   drawerImg: { width: 80, height: 80, borderRadius: 12, objectFit: "cover", border: "1px solid #eee" },
 
-  row: { display: "grid", gridTemplateColumns: "120px 1fr", gap: 10, padding: "10px 0", borderBottom: "1px dashed #f0f0f0" },
+  row: { display: "grid", gridTemplateColumns: "150px 1fr", gap: 10, padding: "10px 0", borderBottom: "1px dashed #f0f0f0" },
   rowLabel: { color: "#666", fontSize: 12 },
   rowValue: { color: "#111", fontWeight: 700, fontSize: 13 },
 

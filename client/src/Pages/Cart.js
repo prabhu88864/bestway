@@ -13,12 +13,16 @@ export default function Cart() {
   const [updatingId, setUpdatingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
+  // ---------------- USER (me) STATE ----------------
+  const [meLoading, setMeLoading] = useState(true);
+  const [meErr, setMeErr] = useState("");
+  const [me, setMe] = useState(null);
+
   // ---------------- ADDRESS STATE ----------------
   const [addrLoading, setAddrLoading] = useState(true);
   const [addrErr, setAddrErr] = useState("");
   const [addrMsg, setAddrMsg] = useState("");
   const [addresses, setAddresses] = useState([]);
-  const [manageOpen, setManageOpen] = useState(true); // ✅ default open (one page view)
   const [formOpen, setFormOpen] = useState(false);
   const [savingAddr, setSavingAddr] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -67,51 +71,112 @@ export default function Cart() {
     return `${API_ORIGIN}/${path}`;
   };
 
-  const money = (v) => {
+  const safeNum = (v) => {
     const n = Number(v ?? 0);
-    if (Number.isNaN(n)) return "0.00";
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const money = (v) => {
+    const n = safeNum(v);
     return n.toFixed(2);
+  };
+
+  const pctText = (n) => {
+    const x = safeNum(n);
+    if (x <= 0) return "0%";
+    return `${x.toFixed(2).replace(/\.00$/, "")}%`;
   };
 
   // ---------------- CART HELPERS ----------------
   const cartItems = (data?.CartItems || data?.cartItems || data?.items || []) ?? [];
   const getProduct = (it) => it?.product || it?.Product || it?.productDetails || {};
-  const getQty = (it) => Number(it?.qty ?? it?.quantity ?? it?.cartQty ?? 1);
+  const getQty = (it) => safeNum(it?.qty ?? it?.quantity ?? it?.cartQty ?? 1) || 1;
 
   const itemsCount = data?.itemsCount ?? cartItems.length ?? 0;
-  const totalQty = data?.totalQty ?? cartItems.reduce((s, it) => s + Number(getQty(it) || 0), 0);
+  const totalQty = data?.totalQty ?? cartItems.reduce((s, it) => s + getQty(it), 0);
 
-  const totalAmount =
+  // ---------------- USER TYPE ----------------
+  const userType = String(me?.userType || "").toUpperCase().trim();
+
+  // ✅ Discount % from YOUR product fields
+  // product.entrepreneurDiscount = "10.00"
+  // product.traineeEntrepreneurDiscount = "5.00"
+  const getEntDiscPercent = (p) => safeNum(p?.entrepreneurDiscount ?? 0);
+  const getTraineeDiscPercent = (p) => safeNum(p?.traineeEntrepreneurDiscount ?? 0);
+
+  const getApplicablePercent = (p) => {
+    if (userType === "ENTREPRENEUR") return getEntDiscPercent(p);
+    if (userType === "TRAINEE_ENTREPRENEUR") return getTraineeDiscPercent(p);
+    return 0;
+  };
+
+  // ✅ Subtotal (before discount)
+  const subtotal =
     data?.totalAmount ??
     cartItems.reduce((s, it) => {
       const p = getProduct(it);
-      const price = Number(p?.price ?? it?.price ?? 0);
+      const price = safeNum(p?.price ?? it?.price ?? 0);
       return s + price * getQty(it);
     }, 0);
 
-  // ---------------- DELIVERY CHARGE CALC ----------------
+  // ✅ Build item-wise summary including discount
+  const summaryProducts = useMemo(() => {
+    return cartItems.map((it) => {
+      const p = getProduct(it);
+      const qty = getQty(it);
+      const price = safeNum(p?.price ?? it?.price ?? 0);
+      const percent = getApplicablePercent(p);
+      const lineTotal = price * qty;
+      const lineDiscount = (lineTotal * percent) / 100;
+
+      return {
+        id: it?.id ?? it?._id ?? `${p?.id || ""}-${p?.name || ""}`,
+        name: p?.name || it?.name || "Product",
+        qty,
+        price,
+        percent,
+        lineTotal,
+        lineDiscount,
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartItems, userType]);
+
+  // ✅ Total discount = sum of item discount
+  const discountAmount = useMemo(() => {
+    const sum = summaryProducts.reduce((s, x) => s + safeNum(x.lineDiscount), 0);
+    return Math.min(sum, safeNum(subtotal));
+  }, [summaryProducts, subtotal]);
+
+  const subtotalAfterDiscount = useMemo(() => {
+    const v = safeNum(subtotal) - safeNum(discountAmount);
+    return v < 0 ? 0 : v;
+  }, [subtotal, discountAmount]);
+
+  // ---------------- DELIVERY CHARGE CALC (based on payable subtotal) ----------------
   const deliveryCharge = useMemo(() => {
-    const subtotal = Number(totalAmount || 0);
+    const base = safeNum(subtotalAfterDiscount);
     if (!Array.isArray(deliveryRules) || deliveryRules.length === 0) return 0;
 
     const active = deliveryRules.filter((r) => r?.isActive !== false);
 
     const matches = active.filter((r) => {
-      const min = Number(r?.minAmount ?? 0);
-      const max = Number(r?.maxAmount ?? 0);
-      if (!Number.isFinite(min) || !Number.isFinite(max)) return false;
-      return subtotal >= min && subtotal <= max;
+      const min = safeNum(r?.minAmount ?? 0);
+      const max = safeNum(r?.maxAmount ?? 0);
+      return base >= min && base <= max;
     });
 
     if (matches.length === 0) return 0;
 
-    matches.sort((a, b) => Number(a.maxAmount) - Number(b.maxAmount));
+    matches.sort((a, b) => safeNum(a.maxAmount) - safeNum(b.maxAmount));
     const chosen = matches[0];
-    const c = Number(chosen?.charge ?? 0);
-    return Number.isFinite(c) ? c : 0;
-  }, [deliveryRules, totalAmount]);
+    return safeNum(chosen?.charge ?? 0);
+  }, [deliveryRules, subtotalAfterDiscount]);
 
-  const grandTotal = useMemo(() => Number(totalAmount || 0) + Number(deliveryCharge || 0), [totalAmount, deliveryCharge]);
+  const grandTotal = useMemo(
+    () => safeNum(subtotalAfterDiscount) + safeNum(deliveryCharge),
+    [subtotalAfterDiscount, deliveryCharge]
+  );
 
   // ---------------- LOADERS ----------------
   const loadCart = async () => {
@@ -125,6 +190,21 @@ export default function Cart() {
       setData(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMe = async () => {
+    try {
+      setMeLoading(true);
+      setMeErr("");
+      const res = await axiosInstance.get("/api/users/me", { params: { _ts: Date.now() } });
+      const u = res?.data?.user || res?.data || null;
+      setMe(u);
+    } catch (e) {
+      setMeErr(e?.response?.data?.msg || e?.response?.data?.message || e?.message || "Failed to load user");
+      setMe(null);
+    } finally {
+      setMeLoading(false);
     }
   };
 
@@ -203,6 +283,7 @@ export default function Cart() {
     }
 
     loadCart();
+    loadMe();
     loadAddresses();
     loadWallet();
     loadDeliveryCharges();
@@ -250,6 +331,7 @@ export default function Cart() {
       } else {
         await loadCart();
       }
+      await loadDeliveryCharges();
     } catch (e) {
       setErr(e?.response?.data?.msg || e?.response?.data?.message || e?.message || "Failed to update quantity");
     } finally {
@@ -359,8 +441,8 @@ export default function Cart() {
   };
 
   // ---------------- PAY NOW ----------------
-  const walletBalance = Number(wallet?.balance ?? 0);
-  const canPayWithWallet = walletBalance >= Number(grandTotal || 0);
+  const walletBalance = safeNum(wallet?.balance ?? 0);
+  const canPayWithWallet = walletBalance >= safeNum(grandTotal);
 
   const payNow = async () => {
     if (paying) return;
@@ -390,30 +472,26 @@ export default function Cart() {
       setPaying(true);
       setErr("");
 
-      // ✅ Create order
       const orderRes = await axiosInstance.post("/api/orders", {
         paymentMethod,
         addressId: Number(selectedAddressId),
-        // If backend accepts, you can also send:
-        // deliveryCharge: Number(deliveryCharge || 0),
+        // backend should compute final payable; frontend is only display
       });
 
       const createdOrder = orderRes?.data?.order || orderRes?.data || {};
       const orderId = createdOrder?.id || createdOrder?.orderId;
 
-      // WALLET/COD done
       if (paymentMethod === "WALLET" || paymentMethod === "COD") {
         await loadWallet();
         navigate("/components/Dashboard", { state: { orderId } });
         return;
       }
 
-      // ✅ Razorpay create-order (server should return keyId, orderId, amount)
       const rzCreate = await axiosInstance.post("/api/razorpay/create-order", { orderId: Number(orderId) });
       const rz = rzCreate?.data || {};
 
       const razorpayOrderId = rz?.orderId || rz?.razorpay_order_id;
-      const amountPaise = Number(rz?.amount ?? 0);
+      const amountPaise = safeNum(rz?.amount ?? 0);
       const currency = rz?.currency || "INR";
       const keyId = rz?.keyId || rz?.key_id || rz?.key || "";
 
@@ -422,7 +500,6 @@ export default function Cart() {
         return;
       }
 
-      const user = JSON.parse(localStorage.getItem("user") || "null");
       const tokenNow = localStorage.getItem("token") || localStorage.getItem("authToken");
 
       const options = {
@@ -435,26 +512,23 @@ export default function Cart() {
         prefill: {
           name: [selectedAddress?.receiverFirstName, selectedAddress?.receiverLastName].filter(Boolean).join(" "),
           contact: selectedAddress?.receiverPhone || "",
-          email: user?.email || "",
+          email: me?.email || "",
         },
         notes: { internal_order_id: String(orderId) },
         theme: { color: "#6D5BFF" },
 
         handler: async function (response) {
           try {
-            // ✅ Ensure token still exists (protect from accidental clearing)
             if (tokenNow && !(localStorage.getItem("token") || localStorage.getItem("authToken"))) {
               localStorage.setItem("token", tokenNow);
             }
 
-            // ✅ Verify payment
             await axiosInstance.post("/api/razorpay/verify", {
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
             });
 
-            // ✅ Reload data (no logout)
             await loadCart();
             await loadWallet();
             navigate("/components/Dashboard", { state: { orderId } });
@@ -488,6 +562,18 @@ export default function Cart() {
           <div>
             <div style={S.h1}>Cart</div>
             <div style={S.sub}>All-in-one checkout (Items + Address + Delivery + Payment)</div>
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.82 }}>
+              {meLoading ? (
+                "Loading user…"
+              ) : meErr ? (
+                <span style={{ color: "#ffb4b4", fontWeight: 800 }}>{meErr}</span>
+              ) : (
+                <>
+                  User: <b style={{ color: "#ffd24a" }}>{me?.name || "—"}</b> • Type:{" "}
+                  <b style={{ color: "#9ff0be" }}>{userType || "—"}</b>
+                </>
+              )}
+            </div>
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -497,6 +583,7 @@ export default function Cart() {
               style={S.btn}
               onClick={() => {
                 loadCart();
+                loadMe();
                 loadAddresses();
                 loadWallet();
                 loadDeliveryCharges();
@@ -533,7 +620,7 @@ export default function Cart() {
                   const p = getProduct(it);
                   const qty = getQty(it);
                   const img = imgUrl(p?.images?.[0]);
-                  const price = Number(p?.price || it?.price || 0);
+                  const price = safeNum(p?.price || it?.price || 0);
                   const lineTotal = price * qty;
 
                   const cartItemId = it?.id ?? it?.cartItemId ?? it?._id;
@@ -571,7 +658,7 @@ export default function Cart() {
 
                         <div style={S.row}>
                           <div style={S.price}>₹ {money(price)}</div>
-                          <div style={S.badge}>Stock: {Number(p?.stockQty ?? 0) || "—"}</div>
+                          <div style={S.badge}>Stock: {safeNum(p?.stockQty ?? 0) || "—"}</div>
                         </div>
 
                         <div style={S.qtyRow}>
@@ -648,11 +735,10 @@ export default function Cart() {
                   <div style={{ ...S.addrBox, marginTop: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                       <div style={{ fontWeight: 950 }}>
-                        {selectedAddress.label || "Address"} {selectedAddress.isDefault ? <span style={S.pill}>DEFAULT</span> : null}
+                        {selectedAddress.label || "Address"}{" "}
+                        {selectedAddress.isDefault ? <span style={S.pill}>DEFAULT</span> : null}
                       </div>
-                      <button style={S.tinyBtn} onClick={() => startEdit(selectedAddress)}>
-                        Edit
-                      </button>
+                      <button style={S.tinyBtn} onClick={() => startEdit(selectedAddress)}>Edit</button>
                     </div>
 
                     <div style={{ marginTop: 8, opacity: 0.9, lineHeight: 1.5 }}>
@@ -666,7 +752,6 @@ export default function Cart() {
               </>
             )}
 
-            {/* ✅ FORM ALWAYS IN SAME PAGE */}
             {formOpen && (
               <div style={{ marginTop: 14 }}>
                 <div style={S.formTitle}>{editingId ? "Edit Address" : "Add New Address"}</div>
@@ -750,6 +835,28 @@ export default function Cart() {
             </div>
 
             <div style={S.summaryBox}>
+              {/* ✅ PRODUCTS NAME + QTY + % */}
+              <div style={S.productsMini}>
+                <div style={{ fontWeight: 950, marginBottom: 8, opacity: 0.92 }}>Products</div>
+                {summaryProducts.length === 0 ? (
+                  <div style={{ opacity: 0.75, fontSize: 12 }}>No items</div>
+                ) : (
+                  <div style={S.productsList}>
+                    {summaryProducts.map((p) => (
+                      <div key={p.id} style={S.productRow}>
+                        <div style={S.productName}>
+                          {p.name}
+                          <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>
+                            Discount: <b style={{ color: "#9ff0be" }}>{pctText(p.percent)}</b> • (-₹ {money(p.lineDiscount)})
+                          </div>
+                        </div>
+                        <div style={S.productQty}>x {p.qty}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div style={S.sumRow}>
                 <span style={S.sumLeft}>Products</span>
                 <b style={S.sumRight}>{itemsCount}</b>
@@ -760,7 +867,19 @@ export default function Cart() {
               </div>
               <div style={S.sumRow}>
                 <span style={S.sumLeft}>Subtotal</span>
-                <b style={S.sumRight}>₹ {money(totalAmount)}</b>
+                <b style={S.sumRight}>₹ {money(subtotal)}</b>
+              </div>
+
+              <div style={S.sumRow}>
+                <span style={S.sumLeft}>Discount ({userType || "USER"})</span>
+                <b style={{ ...S.sumRight, color: discountAmount > 0 ? "#9ff0be" : "rgba(233,238,252,.75)" }}>
+                  - ₹ {money(discountAmount)}
+                </b>
+              </div>
+
+              <div style={S.sumRow}>
+                <span style={S.sumLeft}>Payable Subtotal</span>
+                <b style={S.sumRight}>₹ {money(subtotalAfterDiscount)}</b>
               </div>
 
               <div style={S.sumRow}>
@@ -862,7 +981,6 @@ export default function Cart() {
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );
@@ -1150,4 +1268,23 @@ const S = {
     cursor: "pointer",
     fontSize: 14,
   },
+
+  // ✅ mini products list styles
+  productsMini: {
+    borderRadius: 14,
+    padding: 12,
+    border: "1px solid rgba(220,235,255,.10)",
+    background: "rgba(255,255,255,.05)",
+    marginBottom: 10,
+  },
+  productsList: { display: "grid", gap: 8 },
+  productRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 10,
+    borderBottom: "1px dashed rgba(220,235,255,.10)",
+    paddingBottom: 8,
+  },
+  productName: { fontSize: 12, fontWeight: 850, opacity: 0.9, lineHeight: 1.2 },
+  productQty: { fontSize: 12, fontWeight: 950, color: "#ffd24a", whiteSpace: "nowrap" },
 };

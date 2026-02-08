@@ -9,15 +9,18 @@ export default function Login() {
 
   const { loading, error } = useSelector((state) => state.login || {});
 
-  const [email, setEmail] = useState("");
+  const [userID, setUserID] = useState("");
   const [password, setPassword] = useState("");
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!email.trim() || !password.trim()) {
-      return alert("Please enter both email and password");
+
+    if (!userID.trim() || !password.trim()) {
+      return alert("Please enter User ID and password");
     }
-    dispatch(loginInitiate({ email, password }, navigate));
+
+    // ✅ Send userID instead of email
+    dispatch(loginInitiate({ userID, password }, navigate));
   };
 
   return (
@@ -49,7 +52,6 @@ export default function Login() {
           color: var(--text);
         }
 
-        /* ===== Page ===== */
         .page{
           min-height: 100vh;
           display:grid;
@@ -144,17 +146,19 @@ export default function Login() {
       <main className="page">
         <div className="card">
           <div className="title">Login</div>
-          <div className="subtitle">Enter your email and password to continue.</div>
+          <div className="subtitle">
+            Enter your User ID and password to continue.
+          </div>
 
           <form onSubmit={handleSubmit}>
             <div className="field">
-              <div className="label">Email</div>
+              <div className="label">User ID</div>
               <input
                 className="input"
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                placeholder="Enter your User ID"
+                value={userID}
+                onChange={(e) => setUserID(e.target.value)}
                 required
                 autoComplete="username"
               />
@@ -183,7 +187,6 @@ export default function Login() {
               <span>
                 New user? <Link to="/register">Register</Link>
               </span>
-             
             </div>
           </form>
         </div>

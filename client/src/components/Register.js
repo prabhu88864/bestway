@@ -28,12 +28,14 @@ export default function Register() {
   const [isRegistered, setIsRegistered] = useState(false);
   const [apiResponse, setApiResponse] = useState(null);
 
+  // cleanup preview URL
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
 
+  // ✅ redirect after success
   useEffect(() => {
     if (isRegistered) {
       const t = setTimeout(() => navigate("/login"), 800);
@@ -84,7 +86,7 @@ export default function Register() {
       const res = await fetch("http://localhost:3000/api/auth/register", {
         method: "POST",
         body: fd,
-        // ✅ do NOT set Content-Type manually, browser sets boundary
+        // ✅ do NOT set Content-Type manually
       });
 
       const data = await res.json().catch(() => ({}));
@@ -98,10 +100,13 @@ export default function Register() {
       // show response
       setApiResponse(data);
 
-      // save token/user like your backend response
-      if (data?.token) localStorage.setItem("token", data.token);
-      if (data?.user) localStorage.setItem("user", JSON.stringify(data.user));
+      // ✅ IMPORTANT FIX:
+      // ✅ After register success -> DO NOT auto-login (do NOT save token/user)
+      // ✅ Always force user to login manually
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
 
+      // ✅ redirect to login (handled by useEffect)
       setIsRegistered(true);
     } catch (err) {
       setError(err?.message || "Registration failed");
@@ -358,7 +363,8 @@ export default function Register() {
           <div className="glow" />
           <div className="title">Register</div>
           <div className="subtitle">
-            Endpoint: <span style={{ color: "rgba(34,211,238,.92)", fontWeight: 900 }}>
+            Endpoint:{" "}
+            <span style={{ color: "rgba(34,211,238,.92)", fontWeight: 900 }}>
               /api/auth/register
             </span>
           </div>
@@ -429,6 +435,7 @@ export default function Register() {
                 </select>
               </div>
 
+              {/* ✅ keep commented if you want
               <div className="field" style={{ marginTop: 0 }}>
                 <div className="label">User Type</div>
                 <select
@@ -442,6 +449,7 @@ export default function Register() {
                   <option value="ENTREPRENEUR">ENTREPRENEUR</option>
                 </select>
               </div>
+              */}
             </div>
 
             <div className="field">
@@ -506,9 +514,7 @@ export default function Register() {
             )}
 
             {apiResponse && (
-              <div className="respBox">
-                {JSON.stringify(apiResponse, null, 2)}
-              </div>
+              <div className="respBox">{JSON.stringify(apiResponse, null, 2)}</div>
             )}
 
             <div className="links">

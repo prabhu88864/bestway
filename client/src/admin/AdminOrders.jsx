@@ -181,6 +181,8 @@ export default function AdminOrders() {
     return `₹${sum.toFixed(2)}`;
   };
 
+  const money = (v) => `₹${Number(v || 0).toFixed(2)}`;
+
   // ✅ click Address button (opens Address + Items panel)
   const onClickAddress = async (order) => {
     if (openOrderId === order.id) {
@@ -430,7 +432,8 @@ export default function AdminOrders() {
                                         </div>
 
                                         <div style={styles.addrLine}>
-                                          Pincode: <b>{selectedAddress.pincode}</b>
+                                          Pincode:{" "}
+                                          <b>{selectedAddress.pincode}</b>
                                         </div>
 
                                         <div style={{ marginTop: 6, opacity: 0.8 }}>
@@ -463,7 +466,9 @@ export default function AdminOrders() {
                                                 <th style={styles.itemsTh}>
                                                   Product
                                                 </th>
-                                                <th style={styles.itemsTh}>Qty</th>
+                                                <th style={styles.itemsTh}>
+                                                  Qty
+                                                </th>
                                                 <th style={styles.itemsTh}>
                                                   Price
                                                 </th>
@@ -478,7 +483,9 @@ export default function AdminOrders() {
                                                   it.qty || it.quantity || 0
                                                 );
                                                 const price = Number(
-                                                  it.price || it.Product?.price || 0
+                                                  it.price ||
+                                                    it.Product?.price ||
+                                                    0
                                                 );
                                                 const lineTotal = qty * price;
                                                 const name =
@@ -488,7 +495,11 @@ export default function AdminOrders() {
                                                 return (
                                                   <tr key={it.id}>
                                                     <td style={styles.itemsTd}>
-                                                      <div style={{ fontWeight: 700 }}>
+                                                      <div
+                                                        style={{
+                                                          fontWeight: 700,
+                                                        }}
+                                                      >
                                                         {name}
                                                       </div>
                                                       <div
@@ -497,13 +508,19 @@ export default function AdminOrders() {
                                                           opacity: 0.75,
                                                         }}
                                                       >
-                                                        Product ID: {it.productId}
+                                                        Product ID:{" "}
+                                                        {it.productId}
                                                       </div>
                                                     </td>
-                                                    <td style={styles.itemsTd}>{qty}</td>
-                                                    <td style={styles.itemsTd}>₹{price}</td>
                                                     <td style={styles.itemsTd}>
-                                                      ₹{lineTotal.toFixed(2)}
+                                                      {qty}
+                                                    </td>
+                                                    <td style={styles.itemsTd}>
+                                                      ₹{price}
+                                                    </td>
+                                                    <td style={styles.itemsTd}>
+                                                      ₹
+                                                      {lineTotal.toFixed(2)}
                                                     </td>
                                                   </tr>
                                                 );
@@ -516,21 +533,26 @@ export default function AdminOrders() {
                                       {/* ===== SUMMARY + STATUS TIMELINE ===== */}
                                       <div style={styles.summaryRow}>
                                         <div>
+                                          {/* ✅ Order Total */}
                                           <div style={styles.sumLine}>
                                             Order Total:{" "}
-                                            <b>
-                                              ₹{Number(o.totalAmount || 0).toFixed(2)}
-                                            </b>
+                                            <b>{money(o.totalAmount)}</b>
                                           </div>
+
+                                          {/* ✅ NEW: Total Discount (below order total) */}
                                           <div style={styles.sumLine}>
-                                            Delivery:{" "}
-                                            <b>
-                                              ₹{Number(o.deliveryCharge || 0).toFixed(2)}
-                                            </b>
+                                            Total Discount:{" "}
+                                            <b>{money(o.totalDiscount)}</b>
                                           </div>
 
                                           <div style={styles.sumLine}>
-                                            Confirmed: <b>{fmt(o.confirmedOn)}</b>
+                                            Delivery:{" "}
+                                            <b>{money(o.deliveryCharge)}</b>
+                                          </div>
+
+                                          <div style={styles.sumLine}>
+                                            Confirmed:{" "}
+                                            <b>{fmt(o.confirmedOn)}</b>
                                           </div>
                                           <div style={styles.sumLine}>
                                             Packed: <b>{fmt(o.packedOn)}</b>
@@ -543,7 +565,8 @@ export default function AdminOrders() {
                                             <b>{fmt(o.outForDeliveryOn)}</b>
                                           </div>
                                           <div style={styles.sumLine}>
-                                            Delivered: <b>{fmt(o.deliveredOn)}</b>
+                                            Delivered:{" "}
+                                            <b>{fmt(o.deliveredOn)}</b>
                                           </div>
                                         </div>
 
@@ -626,7 +649,11 @@ const styles = {
     color: "#444",
     whiteSpace: "nowrap",
   },
-  td: { padding: "10px 8px", borderBottom: "1px solid #f2f2f2", verticalAlign: "top" },
+  td: {
+    padding: "10px 8px",
+    borderBottom: "1px solid #f2f2f2",
+    verticalAlign: "top",
+  },
   empty: { padding: 16, textAlign: "center", color: "#666" },
 
   statusRow: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
