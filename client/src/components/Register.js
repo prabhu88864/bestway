@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { STATUS_CODE, BASE_URL } from "../API/Constants";
+import axios from "../utils/axiosInstance";
+import { toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css"; 
+
+// build API base from BASE_URL, trimming any trailing slash
+const _apiBase = (BASE_URL || "").replace(/\/+$/, "");
 
 export default function Register() {
   const navigate = useNavigate();
@@ -83,11 +90,16 @@ export default function Register() {
       if (referralCode.trim()) fd.append("referralCode", referralCode.trim());
       if (profilePic) fd.append("profilePic", profilePic); // MUST be profilePic
 
-      const res = await fetch("https://api.pminfotechsolutions.in/api/auth/register", {
+      const res = await axios.get(`${_apiBase}/api/auth/register`,
+         {
         method: "POST",
         body: fd,
         // ✅ do NOT set Content-Type manually
       });
+
+      
+      
+
 
       const data = await res.json().catch(() => ({}));
 
